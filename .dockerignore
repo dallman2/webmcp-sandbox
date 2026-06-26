@@ -1,0 +1,14 @@
+.git
+.gitignore
+.github
+.vscode
+.idea
+node_modules
+target
+**/node_modules
+**/target
+Docs
+README.md
+AGENTS.md
+LICENSE
+.env

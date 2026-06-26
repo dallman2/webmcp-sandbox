@@ -1,0 +1,17 @@
+target/
+dist/
+.output/
+node_modules/
+
+.env
+*.log
+
+.DS_Store
+.vscode/
+.idea/
+
+# Docker
+docker-compose.override.yml
+
+# Spiderweb Docs (scripts have their own node_modules)
+Docs/scripts/node_modules/

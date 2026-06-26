@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audit: AUDIT_TITLE — EPIC_NAME</title>
+<link rel="stylesheet" href="../css/docs-base.css">
+</head>
+<body>
+
+<!--
+  TEMPLATE: audit.html
+  Copy to: Docs/audits/<name>.html
+  Documents an audit of a system component, pipeline, or code quality concern.
+-->
+
+<article data-doc-type="audit" data-epic="EPIC_NAME">
+
+<header>
+  <h1>Audit: AUDIT_TITLE</h1>
+  <div class="meta">
+    <span>Epic: EPIC_NAME</span>
+    <span>Date: YYYY-MM-DD</span>
+  </div>
+</header>
+
+<section id="summary">
+  <h2>Executive Summary</h2>
+  <p>One to two paragraphs summarizing the system being audited, its current state, and the overall assessment.</p>
+</section>
+
+<section id="architecture">
+  <h2>Architecture Diagram</h2>
+  <pre><code>Component diagram or mermaid graph describing the system architecture.</code></pre>
+</section>
+
+<section id="breakdown">
+  <h2>Component Breakdown</h2>
+
+  <table>
+    <thead>
+      <tr><th>Component</th><th>Responsibility</th><th>Technology</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Component name</td>
+        <td>What it does</td>
+        <td>Technology used</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="strengths">
+  <h2>Strengths</h2>
+  <ul>
+    <li>Positive aspect of the system</li>
+  </ul>
+</section>
+
+<section id="weaknesses">
+  <h2>Weaknesses (Critical Risks)</h2>
+
+  <table>
+    <thead>
+      <tr><th>Weakness</th><th>Risk Level</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Identified weakness</td>
+        <td>Critical / High / Medium / Low</td>
+        <td>Detailed description of the issue</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="recommendations">
+  <h2>Recommendations</h2>
+
+  <section>
+    <h3>Immediate (Low Effort)</h3>
+    <ul>
+      <li>Quick-win improvement</li>
+    </ul>
+  </section>
+
+  <section>
+    <h3>Strategic (High Performance)</h3>
+    <ul>
+      <li>Long-term architectural improvement</li>
+    </ul>
+  </section>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../index.html">Docs Home</a>
+  <span aria-hidden="true"> / </span>
+  <a href="index.html">Audits</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">AUDIT_TITLE</span>
+</nav>
+
+</article>
+
+</body>
+</html>

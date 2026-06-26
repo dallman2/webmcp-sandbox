@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Epic Overview: EPIC_NAME</title>
+<link rel="stylesheet" href="../css/docs-base.css">
+</head>
+<body>
+
+<!--
+  TEMPLATE: epic-overview.html
+  Copy to: Docs/epics/<epic>/epic-overview.html
+  Update the CSS path, title, data-* attributes, and all placeholder text.
+-->
+
+<article data-doc-type="epic-overview" data-epic="EPIC_NAME" data-status="planned">
+
+<header>
+  <h1>Epic Overview: EPIC_NAME</h1>
+</header>
+
+<section id="vision">
+  <h2>Epic Vision</h2>
+  <p>One to three paragraphs describing the epic's purpose, primary directive, and what success looks like.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <table>
+      <thead><tr><th>ID</th><th>Feature</th></tr></thead>
+      <tbody>
+        <tr><td>P0</td><td>Feature description</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope (Deferred)</h3>
+    <table>
+      <thead><tr><th>ID</th><th>Feature</th><th>Rationale</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>D0</td>
+          <td>Deferred feature description</td>
+          <td>Why deferred</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+</section>
+
+<section id="phase-structure">
+  <h2>Phase Structure</h2>
+
+  <table>
+    <thead>
+      <tr><th>Phase</th><th>Sprint</th><th>Name</th><th>Status</th><th>Depends On</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td rowspan="1"><a href="phase-0/">Phase 0</a></td>
+        <td><a href="phase-0/sprint-0-name/">Sprint 0</a></td>
+        <td>Sprint Name</td>
+        <td data-status="planned">Planned</td>
+        <td>—</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="architecture">
+  <h2>Architecture</h2>
+  <p>Description of the system architecture, tech stack, component topology. Use subsections and tables as needed.</p>
+</section>
+
+<section id="conventions">
+  <h2>Conventions</h2>
+  <ol>
+    <li>Convention or rule for agents/humans working on this epic.</li>
+  </ol>
+</section>
+
+<section id="acceptance">
+  <h2>Acceptance Criteria</h2>
+  <ul>
+    <li><input type="checkbox"> Acceptance criterion</li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <span aria-current="page">EPIC_NAME</span>
+</nav>
+
+</article>
+
+</body>
+</html>

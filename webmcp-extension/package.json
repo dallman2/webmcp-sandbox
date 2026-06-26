@@ -1,0 +1,22 @@
+{
+  "name": "@webmcp-sandbox/extension",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Thin MV3 Chrome extension bridging document.modelContext to the webmcp-sandbox Rust MCP server via WebSocket.",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip"
+  },
+  "dependencies": {
+    "@mcp-b/extension-tools": "^2",
+    "@mcp-b/transports": "^2",
+    "@mcp-b/webmcp-polyfill": "^2",
+    "@mcp-b/webmcp-types": "^2"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0",
+    "typescript": "^5",
+    "wxt": "^0"
+  }
+}

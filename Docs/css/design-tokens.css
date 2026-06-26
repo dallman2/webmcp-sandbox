@@ -1,0 +1,67 @@
+/* design-tokens.css — Design tokens for the Spiderweb docs system.
+   Override this file to customize the color palette and typography.
+   docs-base.css loads this via @import; all base styles remain intact. */
+
+/* ── Always-Available Tokens ─────────────────────────────────────── */
+
+:root {
+  --primary: #aa3bff;
+  --primary-dark: #c084fc;
+
+  --status-danger: #ff4444;
+  --status-success: #44ff44;
+  --status-info: #2196F3;
+
+  --aperture-white: #E5E7E9;
+  --aperture-green: #5C6B4A;
+  --aperture-rust: #A85A32;
+  --aperture-cyan: #00AEEF;
+  --aperture-orange: #F37021;
+  --aperture-grime: #2B2D2F;
+
+  --font-sans: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  --font-size-h1: 56px;
+  --font-size-h2: 24px;
+  --font-size-body: 18px;
+  --font-size-caption: 12px;
+
+  --line-height-body: 1.45;
+  --line-height-headline: 1.18;
+
+  --spacing-unit: 8px;
+  --container-max: 1126px;
+
+  --shadow-default: rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --shadow-dark: rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+
+  --radius-small: 4px;
+  --radius-medium: 6px;
+  --radius-large: 8px;
+  --radius-full: 9999px;
+}
+
+/* ── Mode-Dependent Tokens: Light (default) ──────────────────────── */
+
+:root {
+  --surface-base: #ffffff;
+  --surface-inset: #f4f3ec;
+  --surface-overlay: rgba(255, 255, 255, 0.8);
+  --text-headline: #08060d;
+  --text-body: #6b6375;
+  --border: #e5e4e7;
+}
+
+/* ── Mode-Dependent Tokens: Dark ─────────────────────────────────── */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-base: #16171d;
+    --surface-inset: #1f2028;
+    --surface-overlay: rgba(22, 23, 29, 0.8);
+    --text-headline: #f3f4f6;
+    --text-body: #9ca3af;
+    --border: #2e303a;
+  }
+}

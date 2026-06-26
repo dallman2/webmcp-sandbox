@@ -1,0 +1,32 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md"],
+  "small_model": "deepseek/deepseek-v4-flash",
+  "skills": {
+    "paths": [".opencode/skills"]
+  },
+  "provider": {
+    "deepinfra": {
+      "models": {
+        "zai-org/GLM-5.2": {
+          "name": "GLM 5.2",
+          "tool_call": true
+        },
+        "moonshotai/Kimi-K2.7-Code": {
+          "name": "Kimi K2.7 Code",
+          "tool_call": true
+        },
+        "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B": {
+          "name": "Nemotron 3 Ultra 550B",
+          "tool_call": true
+        }
+      }
+    }
+  },
+  "command": {
+    "plan-refine": {
+      "description": "Differential plan refinement: independent plans from all models, synthesized by GLM 5.2",
+      "template": "You are performing differential plan refinement. Follow this workflow:\n\n1. UNDERSTAND the user's request below thoroughly.\n2. DISPATCH the planning task to ALL FOUR models IN PARALLEL using the Task tool:\n   - subagent_type \"deepseek-v4-pro\" — DeepSeek V4 Pro's independent plan\n   - subagent_type \"kimi-k2.7\" — Kimi K2.7's independent plan\n   - subagent_type \"nemotron-3-ultra\" — Nemotron 3 Ultra's independent plan\n   - subagent_type \"glm-5.2\" — GLM 5.2's independent plan\n   Give each subagent the EXACT same task description.\n3. COLLECT all four generated plans.\n4. DISPATCH to subagent_type \"glm-5.2\" AGAIN (synthesis round) with ALL four collected plans as input. Instruct GLM 5.2 to:\n   - Compare and contrast approaches from each plan\n   - Synthesize into ONE unified, refined plan\n   - Ground every claim in reality — verify against known codebase facts, actual APIs, and existing patterns\n   - Flag any dubious assumptions or ungrounded claims found across the individual plans\n   - Note which plan contributed each element of the final approach\n5. PRESENT the final synthesized plan to the user.\n\nIMPORTANT: Do NOT generate your own plan. Always delegate to subagents.\n\nUser request: "
+    }
+  }
+}

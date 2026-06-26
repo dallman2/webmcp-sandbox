@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Epic Overview: v0.0 — Baseline</title>
+<link rel="stylesheet" href="../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="epic-overview" data-epic="v0.0-baseline" data-status="active">
+
+<header>
+  <h1>Epic Overview: v0.0 — Baseline</h1>
+</header>
+
+<section id="vision">
+  <h2>Epic Vision</h2>
+  <p>Initial documentation baseline for webmcp-sandbox. This epic tracks the foundational documentation work: architecture overview, codebase audits, and establishing the planning cadence with the Spiderweb docs system.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <table>
+      <thead><tr><th>ID</th><th>Feature</th></tr></thead>
+      <tbody>
+        <tr><td>P0</td><td>Architecture overview document</td></tr>
+        <tr><td>P1</td><td>Codebase audit (eslint, typecheck, test coverage baseline)</td></tr>
+        <tr><td>P2</td><td>Populate initial sprint with project-specific tasks</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope (Deferred)</h3>
+    <table>
+      <thead><tr><th>ID</th><th>Feature</th><th>Rationale</th></tr></thead>
+      <tbody>
+        <tr><td>D0</td><td>Exhaustive component audit</td><td>Deferred until Sprint 1 — baseline only needs architecture overview and surface-level audit</td></tr>
+      </tbody>
+    </table>
+  </section>
+</section>
+
+<section id="phase-structure">
+  <h2>Phase Structure</h2>
+  <table>
+    <thead><tr><th>Phase</th><th>Sprint</th><th>Name</th><th>Status</th><th>Depends On</th></tr></thead>
+    <tbody>
+      <tr>
+        <td rowspan="1"><a href="phase-0/">Phase 0</a></td>
+        <td><a href="phase-0/sprint-0-bootstrap/">Sprint 0</a></td>
+        <td>Bootstrap &amp; Baseline</td>
+        <td data-status="planned">Planned</td>
+        <td>-</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="acceptance">
+  <h2>Acceptance Criteria</h2>
+  <ul>
+    <li><input type="checkbox"> Architecture doc exists in Docs/architecture/</li>
+    <li><input type="checkbox"> At least one audit doc exists in Docs/audits/</li>
+    <li><input type="checkbox"> Sprint 0 tasks populated with project-specific work</li>
+    <li><input type="checkbox"> serve.mjs serves the full Docs/ tree</li>
+    <li><input type="checkbox"> validate-docs.mjs passes with zero violations</li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <span aria-current="page">v0.0 — Baseline</span>
+</nav>
+
+</article>
+
+</body>
+</html>

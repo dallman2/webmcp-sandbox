@@ -1,0 +1,51 @@
+/* docs-print.css — Print-optimized stylesheet for HTML docs */
+
+@media print {
+  * {
+    background: transparent !important;
+    color: #000 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  body {
+    font-family: Georgia, 'Times New Roman', Times, serif;
+    font-size: 12pt;
+    line-height: 1.5;
+    max-width: 100%;
+    padding: 0.5in;
+  }
+
+  h1 { font-size: 24pt; }
+  h2 { font-size: 16pt; border-bottom: 1px solid #ccc; }
+  h3 { font-size: 13pt; }
+  h4 { font-size: 12pt; }
+
+  a { color: #000; text-decoration: underline; }
+  a[href]::after { content: " (" attr(href) ")"; font-size: 9pt; color: #666; }
+
+  code, pre {
+    border: 1px solid #ccc;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 10pt;
+  }
+
+  pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  table { border-collapse: collapse; }
+  th, td { border: 1px solid #000; padding: 4pt; }
+  th { font-weight: bold; }
+
+  li[data-task-id] input[type="checkbox"] { display: none; }
+  li[data-task-id] input[type="checkbox"]:checked + *::before { content: "[x] "; }
+  li[data-task-id] input[type="checkbox"]:not(:checked) + *::before { content: "[ ] "; }
+
+  .breadcrumb { display: none; }
+
+  @page {
+    margin: 0.75in;
+  }
+}

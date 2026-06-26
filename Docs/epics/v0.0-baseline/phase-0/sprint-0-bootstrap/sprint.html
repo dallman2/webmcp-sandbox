@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 0: Bootstrap &amp; Baseline — Phase 0 — v0.0-baseline</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v0.0-baseline" data-phase="0" data-sprint="0" data-status="planned">
+
+<header>
+  <h1>Sprint 0: Bootstrap &amp; Baseline</h1>
+  <div class="meta">
+    <span>Phase: 0</span>
+    <span>Sprint: 0</span>
+    <span>Depends on: —</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Establish the documentation baseline for webmcp-sandbox: create architecture documentation, run initial codebase audits, and populate this sprint with project-specific tasks. This sprint is auto-created by Spiderweb bootstrap — populate it with your project's actual work.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>Every project needs a starting point. This sprint captures the initial assessment of the codebase so future sprints can reference the baseline architecture and audit findings.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Create <code>Docs/architecture/system-overview.html</code> describing the project's architecture, component topology, and data flow</li>
+      <li>Run <code>pnpm lint</code> to assess code quality baseline</li>
+      <li>Run <code>pnpm typecheck</code> to assess type coverage</li>
+      <li>Create <code>Docs/audits/baseline-quality.html</code> summarizing findings</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Fixing lint/type issues found during audit — those go in future sprints</li>
+      <li>Writing exhaustive component-level documentation — architecture overview is sufficient</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Architecture Documentation</h3>
+  <ol>
+    <li data-task-id="1.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.1: Write system overview architecture doc</strong>
+        <data data-files="Docs/architecture/system-overview.html"></data>
+        <p>Create an architecture document covering: project purpose, component topology (services, databases, external APIs), data flow between components, and key design decisions. Use the structure from <code>Docs/templates/reference.html</code>.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Codebase Audits</h3>
+  <ol>
+    <li data-task-id="2.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.1: Run lint audit and document findings</strong>
+        <data data-files="Docs/audits/baseline-quality.html"></data>
+        <p>Run the project's linter. Record the number of errors and warnings. Note any patterns (e.g., "20 no-explicit-any warnings clustered in legacy auth module").</p>
+      </div>
+    </li>
+    <li data-task-id="2.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.2: Run typecheck and document findings</strong>
+        <data data-files="Docs/audits/baseline-quality.html"></data>
+        <p>Run the project's typechecker. Record whether it passes. If there are errors, list the files with the most errors.</p>
+      </div>
+    </li>
+    <li data-task-id="2.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.3: Run test suite and document coverage baseline</strong>
+        <data data-files="Docs/audits/baseline-quality.html"></data>
+        <p>Run the project's test suite. Record pass/fail counts and coverage percentage if available.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Planning</h3>
+  <ol>
+    <li data-task-id="3.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 3.1: Identify next epic based on audit findings</strong>
+        <p>Based on the audit results, determine the highest-priority area for the next epic. Common examples: type safety cleanup, test coverage improvement, performance optimization, documentation expansion.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>Docs system</td><td>Spiderweb (HTML semantic docs + ESM scripts)</td></tr>
+      <tr><td>Linting</td><td>ESLint</td></tr>
+      <tr><td>Type checking</td><td>TypeScript</td></tr>
+      <tr><td>Testing</td><td>Vitest / Jest / (project-specific)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox">
+      <span>Architecture doc exists and is valid</span>
+      <code>node Docs/scripts/validate-docs.mjs</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Audit doc exists and is valid</span>
+      <code>node Docs/scripts/validate-docs.mjs</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>All docs pass validation with zero violations</span>
+      <code>node Docs/scripts/validate-docs.mjs --verbose</code>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../index.html">v0.0-baseline</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 0: Bootstrap &amp; Baseline</span>
+</nav>
+
+</article>
+
+</body>
+</html>
