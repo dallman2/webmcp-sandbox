@@ -1,6 +1,7 @@
 import { defineConfig } from "wxt";
 
 export default defineConfig({
+  srcDir: "src",
   manifest: () => ({
     name: "WebMCP Sandbox Bridge",
     description:
@@ -9,6 +10,4 @@ export default defineConfig({
     host_permissions: ["<all_urls>"],
     manifest_version: 3,
   }),
-  srcDir: "src",
-  outDir: ".output",
 });

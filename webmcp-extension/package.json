@@ -9,14 +9,14 @@
     "zip": "wxt zip"
   },
   "dependencies": {
-    "@mcp-b/extension-tools": "^2",
-    "@mcp-b/transports": "^2",
-    "@mcp-b/webmcp-polyfill": "^2",
-    "@mcp-b/webmcp-types": "^2"
+    "@mcp-b/extension-tools": "^2.3.0",
+    "@mcp-b/transports": "^2.3.0",
+    "@mcp-b/webmcp-polyfill": "^2.3.0",
+    "@mcp-b/webmcp-types": "^2.3.0"
   },
   "devDependencies": {
-    "@types/chrome": "^0",
-    "typescript": "^5",
-    "wxt": "^0"
+    "@types/chrome": "^0.0.300",
+    "typescript": "^5.8.0",
+    "wxt": "^0.19.0"
   }
 }

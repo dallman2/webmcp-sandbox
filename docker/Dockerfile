@@ -3,9 +3,9 @@ WORKDIR /build
 COPY mcp-server/ .
 RUN cargo build --release
 
-FROM node:20-bookworm AS ext-builder
+FROM node:22-bookworm AS ext-builder
 WORKDIR /build
-COPY webmcp-extension/package.json webmcp-extension/package-lock.json ./
+COPY webmcp-extension/package.json ./
 RUN npm install
 COPY webmcp-extension/ .
 RUN npm run build
@@ -16,9 +16,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     wget gnupg xvfb x11vnc libx11-xcb1 libnss3 libatk-bridge2.0-0 libgtk-3-0 \
     libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2 \
-    && wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list \
-    && apt-get update && apt-get install -y google-chrome-stable \
+    chromium-browser \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
