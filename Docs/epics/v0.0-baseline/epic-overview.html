@@ -8,7 +8,7 @@
 </head>
 <body>
 
-<article data-doc-type="epic-overview" data-epic="v0.0-baseline" data-status="active">
+<article data-doc-type="epic-overview" data-epic="v0.0-baseline" data-status="completed">
 
 <header>
   <h1>Epic Overview: v0.0 — Baseline</h1>
@@ -51,11 +51,23 @@
     <thead><tr><th>Phase</th><th>Sprint</th><th>Name</th><th>Status</th><th>Depends On</th></tr></thead>
     <tbody>
       <tr>
-        <td rowspan="1"><a href="phase-0/">Phase 0</a></td>
+        <td rowspan="3"><a href="phase-0/">Phase 0</a></td>
         <td><a href="phase-0/sprint-0-bootstrap/">Sprint 0</a></td>
-        <td>Bootstrap &amp; Baseline</td>
-        <td data-status="planned">Planned</td>
+        <td>Bootstrap &amp; Verification</td>
+        <td data-status="completed">Completed</td>
         <td>-</td>
+      </tr>
+      <tr>
+        <td><a href="phase-0/sprint-1-e2e-bridge/">Sprint 1</a></td>
+        <td>End-to-End Bridge</td>
+        <td data-status="completed">Completed</td>
+        <td>Sprint 0</td>
+      </tr>
+      <tr>
+        <td><a href="phase-0/sprint-2-http-hardening/">Sprint 2</a></td>
+        <td>HTTP-Only Hardening</td>
+        <td data-status="completed">Completed</td>
+        <td>Sprint 1</td>
       </tr>
     </tbody>
   </table>
@@ -64,11 +76,11 @@
 <section id="acceptance">
   <h2>Acceptance Criteria</h2>
   <ul>
-    <li><input type="checkbox"> Architecture doc exists in Docs/architecture/</li>
-    <li><input type="checkbox"> At least one audit doc exists in Docs/audits/</li>
-    <li><input type="checkbox"> Sprint 0 tasks populated with project-specific work</li>
-    <li><input type="checkbox"> serve.mjs serves the full Docs/ tree</li>
-    <li><input type="checkbox"> validate-docs.mjs passes with zero violations</li>
+    <li><input type="checkbox" checked> Architecture doc exists in Docs/architecture/</li>
+    <li><input type="checkbox" checked> At least one audit doc exists in Docs/audits/</li>
+    <li><input type="checkbox" checked> Sprint 0 tasks populated with project-specific work</li>
+    <li><input type="checkbox" checked> serve.mjs serves the full Docs/ tree</li>
+    <li><input type="checkbox" checked> validate-docs.mjs passes with zero violations</li>
   </ul>
 </section>
 

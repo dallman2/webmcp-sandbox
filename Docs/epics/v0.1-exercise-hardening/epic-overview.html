@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Epic Overview: v0.1 — Exercise Hardening</title>
+<link rel="stylesheet" href="../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="epic-overview" data-epic="v0.1-exercise-hardening" data-status="completed">
+
+<header>
+  <h1>Epic Overview: v0.1 — Exercise Hardening</h1>
+</header>
+
+<section id="vision">
+  <h2>Epic Vision</h2>
+  <p>Harden the v0.0 baseline by resolving the SSE-transport doc-vs-code divergence (replace the hand-rolled legacy SSE handler with canonical <code>rmcp::StreamableHttpService</code>), fix container runtime failures (missing fixtures, missing networking), prove the sandbox works end-to-end against a real WebMCP-enabled site at <code>localhost:8180</code>, and deliver single-command portability (<code>make run</code> from a fresh clone).</p>
+  <p>This epic makes the project <strong>real</strong>: a real MCP client can connect, a real target site can be exercised, and a new user can <code>git clone && make run</code> to get a working sandbox.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <table>
+      <thead><tr><th>ID</th><th>Feature</th></tr></thead>
+      <tbody>
+        <tr><td>P0</td><td>Replace legacy SSE handler with rmcp::StreamableHttpService (canonical MCP transport)</td></tr>
+        <tr><td>P1</td><td>Add relay timeout to prevent hanging tool calls on extension disconnect</td></tr>
+        <tr><td>P2</td><td>Fix polyfill execute_tool null bug (blocker for exercise proof)</td></tr>
+        <tr><td>P3</td><td>Reconcile all doc-vs-code drift (sprint-2 transport claims, templates, tools.rs ref)</td></tr>
+        <tr><td>P4</td><td>Fix Docker container: copy fixtures, serve via Rust ServeDir, health-readiness checks</td></tr>
+        <tr><td>P5</td><td>Cross-platform host→container networking (host.docker.internal / --network=host) for localhost:8180</td></tr>
+        <tr><td>P6</td><td>Replace fragile tabs[0] targeting with URL-based tab selection + /sandbox-config runtime config</td></tr>
+        <tr><td>P7</td><td>MCP client exercise harness (smoke.mjs) with assertions against fixture and localhost:8180</td></tr>
+        <tr><td>P8</td><td>Single-command portability: Makefile (make run), README rewrite, docker-compose.yml</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope (Deferred)</h3>
+    <table>
+      <thead><tr><th>ID</th><th>Feature</th><th>Rationale</th></tr></thead>
+      <tbody>
+        <tr><td>D0</td><td>Multi-agent / concurrent extension sessions</td><td>AppState supports one extension connection; deferred to future epic</td></tr>
+        <tr><td>D1</td><td>GHCR multi-arch publish as automated gate</td><td>Workflow committed as workflow_dispatch opt-in; canonical path is make run from clone</td></tr>
+        <tr><td>D2</td><td>arm64 / Apple Silicon native image</td><td>amd64 via Docker Desktop emulation sufficient for v0.1</td></tr>
+        <tr><td>D3</td><td>CI pipeline beyond GHCR opt-in workflow</td><td>Verification is manual (gates defined in sprints)</td></tr>
+        <tr><td>D4</td><td>Tool-per-file refactor (src/tools/)</td><td>Only 2 tools; AGENTS.md threshold is >3 tools</td></tr>
+      </tbody>
+    </table>
+  </section>
+</section>
+
+<section id="phase-structure">
+  <h2>Phase Structure</h2>
+  <table>
+    <thead><tr><th>Phase</th><th>Sprint</th><th>Name</th><th>Status</th><th>Depends On</th></tr></thead>
+    <tbody>
+      <tr>
+        <td rowspan="3"><a href="phase-0/">Phase 0</a></td>
+        <td><a href="phase-0/sprint-1-truth-and-transport/">Sprint 1</a></td>
+        <td>Truth Reconciliation &amp; Canonical Transport</td>
+        <td data-status="completed">Completed</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><a href="phase-0/sprint-2-container-reachability/">Sprint 2</a></td>
+        <td>Container Correctness &amp; Host Reachability</td>
+        <td data-status="completed">Completed</td>
+        <td>Sprint 1</td>
+      </tr>
+      <tr>
+        <td><a href="phase-0/sprint-3-exercise-portability/">Sprint 3</a></td>
+        <td>Exercise Harness &amp; Single-Command Portability</td>
+        <td data-status="completed">Completed</td>
+        <td>Sprint 2</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="acceptance">
+  <h2>Acceptance Criteria</h2>
+  <ul>
+    <li><input type="checkbox"> MCP inspector connects to http://localhost:3000/mcp via Streamable HTTP transport</li>
+    <li><input type="checkbox"> tools/call execute_tool returns a real result (not null) from the fixture page</li>
+    <li><input type="checkbox"> Docker container boots all services, fixture page loads, tool call round-trips end-to-end</li>
+    <li><input type="checkbox"> Container can reach a host-side localhost:8180 on both macOS and Linux</li>
+    <li><input type="checkbox"> make smoke-fixture passes all assertions against the fixture page</li>
+    <li><input type="checkbox"> make smoke-host passes assertions against user's localhost:8180 site</li>
+    <li><input type="checkbox"> git clone && make run produces a working sandbox (single command)</li>
+    <li><input type="checkbox"> validate-docs.mjs passes with zero violations</li>
+    <li><input type="checkbox"> check-doc-drift.mjs passes with zero drifts</li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <span aria-current="page">v0.1 — Exercise Hardening</span>
+</nav>
+
+</article>
+
+</body>
+</html>

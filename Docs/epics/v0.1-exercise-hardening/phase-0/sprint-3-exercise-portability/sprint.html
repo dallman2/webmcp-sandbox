@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 3: Exercise Harness & Single-Command Portability — Phase 0 — v0.1-exercise-hardening</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v0.1-exercise-hardening" data-phase="0" data-sprint="3" data-status="completed">
+
+<header>
+  <h1>Sprint 3: Exercise Harness &amp; Single-Command Portability</h1>
+  <div class="meta">
+    <span>Phase: 0</span>
+    <span>Sprint: 3</span>
+    <span>Depends on: Sprint 2</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Prove the sandbox works end-to-end by exercising a real MCP client (<code>@modelcontextprotocol/sdk</code>) against both the fixture page and the user's <code>localhost:8180</code> WebMCP site, with automated assertions and clear pass/fail output. Deliver single-command portability: <code>git clone &amp;&amp; make run</code> produces a working sandbox.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>Sprint 1 provides a canonical Streamable-HTTP MCP server. Sprint 2 provides a correctly-booting container that can reach a host-side target. This sprint builds the proof layer: an automated exercise script that an MCP client follows to validate the entire relay chain (agent → MCP server → WS → extension → page → tool execution → result back). The exercise is the concrete deliverable for Goal #2 ("prove this thing works against localhost:8180"). The Makefile + README rewrite satisfy Goal #3 ("single command after clone to build the docker container"). An optional GHCR publish workflow is committed as <code>workflow_dispatch</code>-only (opt-in stretch).</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>MCP client smoke harness using <code>@modelcontextprotocol/sdk</code> StreamableHTTPClientTransport</li>
+      <li>Exercise flow: initialize → tools/list (assert ≥2) → discover_tools (assert non-empty) → execute_tool (assert real result, not null)</li>
+      <li>Dual-target support: <code>--target fixture</code> vs <code>--target host</code> with different assertion profiles</li>
+      <li>Fixture assertions: discover ≥1 tool (named "hello"), execute returns "Hello, OpenCode! from WebMCP sandbox"</li>
+      <li>Host (:8180) assertions: discover non-empty (user's tools), execute returns non-null non-error result</li>
+      <li>Transcript output to <code>exercises/output/&lt;timestamp&gt;.json</code></li>
+      <li><code>exercises/expected.json</code> for configurable assertion parameters</li>
+      <li><code>exercises/playbook.md</code> mirroring AGENTS.md [CRITICAL PROTOCOL] workflow loop</li>
+      <li>Makefile with targets: build, run, run-fixture, run-host, smoke, smoke-fixture, smoke-host, publish, clean</li>
+      <li>OS-detection in run-host: macOS → host.docker.internal; Linux → --network=host</li>
+      <li><code>docker-compose.yml</code> (optional) with extra_hosts / network_mode and environment block</li>
+      <li>README full rewrite: lead with make run, document env vars, link exercise section</li>
+      <li>opt-in GHCR publish workflow (<code>.github/workflows/docker-publish.yml</code>, workflow_dispatch only, amd64)</li>
+      <li>Create <code>Docs/audits/v0.1-exercise-verification.html</code> audit documenting the exercise results</li>
+      <li>Check v0.0 epic acceptance boxes if genuinely met by v0.1 close-out</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope (Deferred)</h3>
+    <ul>
+      <li>GHCR publish as automated gate on tag push (opt-in workflow_dispatch only)</li>
+      <li>arm64 / Apple Silicon native image</li>
+      <li>Multi-agent exercise scenarios</li>
+      <li>CI pipeline beyond the opt-in GHCR workflow</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Exercise Harness</h3>
+  <ol>
+    <li data-task-id="1.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 1.1: Create exercises/ package with MCP SDK client</strong>
+        <data data-files="exercises/package.json exercises/smoke.mjs"></data>
+        <p>Create <code>exercises/</code> directory with <code>package.json</code> depending on <code>@modelcontextprotocol/sdk</code>. Implement <code>smoke.mjs</code>: connect via <code>StreamableHTTPClientTransport</code> to <code>http://localhost:3000/mcp</code>, run the playbook sequence, assert each step, write transcript to <code>exercises/output/&lt;ts&gt;.json</code>, exit 0 on pass / non-zero on failure with clear diff output.</p>
+      </div>
+    </li>
+    <li data-task-id="1.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 1.2: Implement dual-target assertion profiles</strong>
+        <data data-files="exercises/expected.json exercises/smoke.mjs"></data>
+        <p>Create <code>exercises/expected.json</code>: <code>{"fixture":{"discoverCountMin":1,"discoverContains":"hello","executeResultContains":"Hello, OpenCode"},"host":{"discoverCountMin":1,"executeResultContains":null}}</code>. In <code>smoke.mjs</code>, read the appropriate profile based on <code>--target fixture|host</code> flag. Fixture: strict assertions for the known "hello" tool. Host: only assert non-empty discover and non-null/non-error execute result (user's site contract is unknown but confirmed WebMCP-enabled per user).</p>
+      </div>
+    </li>
+    <li data-task-id="1.3">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 1.3: Create exercises/playbook.md documenting the exercise flow</strong>
+        <data data-files="exercises/playbook.md"></data>
+        <p>Document the MCP client sequence mirroring AGENTS.md [CRITICAL PROTOCOL]: (1) <code>tools/list</code> → verify server tools, (2) <code>tools/call discover_tools</code> → assess page tools, (3) <code>tools/call execute_tool</code> → execute a SINGLE tool with typed JSON args, (4) wait for response. Include expected output examples for both fixture and host targets.</p>
+      </div>
+    </li>
+    <li data-task-id="1.4">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 1.4: Create exercises/run-exercise.sh driver script</strong>
+        <data data-files="exercises/run-exercise.sh"></data>
+        <p>Shell script that (a) boots the container with the right env/network flags for the target, (b) waits for readiness via <code>/sandbox-config</code> poll, (c) runs <code>node exercises/smoke.mjs --target &lt;fixture|host&gt;</code>, (d) prints pass/fail with color output and transcript path.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Single-Command Portability</h3>
+  <ol>
+    <li data-task-id="2.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 2.1: Create Makefile with build, run, smoke targets</strong>
+        <data data-files="Makefile"></data>
+        <p>Create <code>Makefile</code> at repo root with targets: <code>build</code> (docker build), <code>run</code> (build → run with fixture default), <code>run-fixture</code> (build → run fixture self-test), <code>run-host</code> (build → run with host :8180 env), <code>smoke</code> (runs exercise against running container), <code>smoke-fixture</code> (run + smoke against fixture), <code>smoke-host</code> (run + smoke against host), <code>publish</code> (echo instructions for GHCR workflow_dispatch), <code>clean</code> (docker rm). Detect OS to set correct docker flags (macOS: <code>--add-host=host.docker.internal:host-gateway</code>; Linux: optional <code>--network=host</code>). <code>make run</code> is the canonical single command satisfying Goal #3.</p>
+      </div>
+    </li>
+    <li data-task-id="2.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 2.2: Create docker-compose.yml</strong>
+        <data data-files="docker-compose.yml"></data>
+        <p>Create <code>docker-compose.yml</code> with <code>services.sandbox</code>: build from <code>docker/Dockerfile</code>, ports <code>3000:3000</code> + <code>5900:5900</code>, environment block for <code>SANDBOX_TARGET_URL</code> + <code>SANDBOX_TARGET_HOST</code>, <code>extra_hosts: ["host.docker.internal:host-gateway"]</code> for macOS, <code>network_mode: host</code> for Linux (comment-switch). Users can <code>docker compose up</code> as an alternative to <code>make run</code>.</p>
+      </div>
+    </li>
+    <li data-task-id="2.3">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 2.3: Create opt-in GHCR publish workflow</strong>
+        <data data-files=".github/workflows/docker-publish.yml"></data>
+        <p>Create <code>.github/workflows/docker-publish.yml</code>: <code>workflow_dispatch</code> trigger (manual only), build multi-stage Docker image for <code>linux/amd64</code>, push to <code>ghcr.io/&lt;owner&gt;/webmcp-sandbox:latest</code>. Uses <code>docker/build-push-action</code>. Comment out <code>linux/arm64</code> platform (deferred). Document in README "Pull &amp; Run" section.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. README Rewrite &amp; Doc Audit</h3>
+  <ol>
+    <li data-task-id="3.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 3.1: Full README rewrite</strong>
+        <data data-files="README.md"></data>
+        <p>Rewrite <code>README.md</code>: lead with <code>make run</code> as the canonical Quick Start (≤5 lines from fresh clone). Add sections: "Pull &amp; Run" (GHCR opt-in), "Target Your Site" (SANDBOX_TARGET_URL + networking table macOS vs Linux), "Exercise" (make smoke + playbook), "Advanced" (docker-compose, manual docker run with all flags), "Development" (cargo run, npm run dev). Remove stale <code>--transport sse --port 3000</code>. Document all env vars.</p>
+      </div>
+    </li>
+    <li data-task-id="3.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 3.2: Create v0.1 exercise verification audit</strong>
+        <data data-files="Docs/audits/v0.1-exercise-verification.html"></data>
+        <p>Scaffold <code>Docs/audits/v0.1-exercise-verification.html</code> from <code>Docs/templates/audit.html</code>. Document: Sprints 1-3 summary, fixture exercise transcript (gate results), host exercise transcript (:8180 tools discovered/executed), container health metrics, known-issue block (polyfill null bug status), recommendations for future work.</p>
+      </div>
+    </li>
+    <li data-task-id="3.3">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 3.3: Check v0.0 epic acceptance boxes if genuinely met</strong>
+        <data data-files="Docs/epics/v0.0-baseline/epic-overview.html"></data>
+        <p>Review the 2 unchecked v0.0 acceptance boxes: "serve.mjs serves the full Docs/ tree" and "validate-docs.mjs passes with zero violations." If both are genuinely met by v0.1 close-out (after Sprint 3 doc regeneration), check the boxes. Otherwise leave them unchecked with a note referencing v0.1 status.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. Final Validation</h3>
+  <ol>
+    <li data-task-id="4.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 4.1: Run all verification gates and close out</strong>
+        <data data-files="Docs/"></data>
+        <p>Gates: (1) <code>make build &amp;&amp; make smoke-fixture</code>: green transcript, discover returns hello, execute returns greeting, (2) <code>make smoke-host</code>: green transcript against user's :8180, (3) <code>docker compose up</code> reaches parity with make run-fixture, (4) <code>node Docs/scripts/validate-docs.mjs</code> → 0 violations, (5) <code>node Docs/scripts/check-doc-drift.mjs</code> → 0 drifts, (6) <code>node Docs/scripts/query-open-tasks.mjs</code> → 0 open in v0.1. All gates pass → mark sprint + epic complete.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>MCP client</td><td>@modelcontextprotocol/sdk (StreamableHTTPClientTransport)</td></tr>
+      <tr><td>Exercise assertions</td><td>Node.js built-in assert</td></tr>
+      <tr><td>Build orchestration</td><td>GNU Make + Docker</td></tr>
+      <tr><td>Container composition</td><td>docker-compose.yml (optional)</td></tr>
+      <tr><td>Image publish (opt-in)</td><td>GitHub Actions + docker/build-push-action</td></tr>
+      <tr><td>Docs</td><td>Spiderweb system (validate, generate-index, check-drift)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox" checked>
+      <span>make smoke-fixture: green transcript, discover returns hello, execute returns greeting</span>
+      <code>make smoke-fixture</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>make smoke-host: green transcript against user's localhost:8180</span>
+      <code>make smoke-host</code> (requires :8180 site running on host)
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>docker compose up reaches parity with make run-fixture</span>
+      <code>docker compose up</code> → curl :3000/sandbox-config returns JSON
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Fresh clone → make build &amp;&amp; make run produces a working sandbox</span>
+      <code>git clone ... &amp;&amp; make run</code> on a clean machine
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>validate-docs.mjs → 0 violations</span>
+      <code>node Docs/scripts/validate-docs.mjs --verbose</code>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>check-doc-drift.mjs → 0 drifts</span>
+      <code>node Docs/scripts/check-doc-drift.mjs --repo-root .</code>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>query-open-tasks.mjs → 0 open in v0.1-exercise-hardening</span>
+      <code>node Docs/scripts/query-open-tasks.mjs</code>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>v0.0 epic acceptance boxes checked (if genuinely met)</span>
+      <code>Manual review of v0.0 epic-overview.html acceptance criteria</code>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../index.html">v0.1-exercise-hardening</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 0</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 3: Exercise Harness &amp; Single-Command Portability</span>
+</nav>
+
+</article>
+
+</body>
+</html>

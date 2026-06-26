@@ -9,10 +9,11 @@
     "zip": "wxt zip"
   },
   "dependencies": {
-    "@mcp-b/extension-tools": "^2.3.0",
-    "@mcp-b/transports": "^2.3.0",
-    "@mcp-b/webmcp-polyfill": "^2.3.0",
-    "@mcp-b/webmcp-types": "^2.3.0"
+    "@mcp-b/extension-tools": "^3.0.0",
+    "@mcp-b/transports": "^3.0.0",
+    "@mcp-b/webmcp-polyfill": "^3.0.0",
+    "@mcp-b/webmcp-types": "^3.0.0",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.300",

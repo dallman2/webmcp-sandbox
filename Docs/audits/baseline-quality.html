@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audit: Baseline Quality — v0.0-baseline</title>
+<link rel="stylesheet" href="../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="audit" data-epic="v0.0-baseline">
+
+<header>
+  <h1>Audit: Baseline Quality</h1>
+  <div class="meta">
+    <span>Epic: v0.0-baseline</span>
+    <span>Date: 2026-06-26</span>
+    <span>Sprint 0 baseline audit</span>
+  </div>
+</header>
+
+<section id="summary">
+  <h2>Executive Summary</h2>
+  <p>This audit characterizes the webmcp-sandbox scaffold as it exists at the start of Sprint 0. The Docker image (<code>webmcp-sandbox:latest</code>, 836MB) boots and serves a stub SSE endpoint on <code>:3000</code>, and VNC is reachable on <code>:5900</code>. However, the system cannot function end-to-end for three independent reasons: (1) the Rust server lacks the <code>rmcp</code> crate, <code>schemars</code>, tool definitions, and a <code>:8765</code> WebSocket listener — the extension's relay has nothing to connect to; (2) Chromium crashes on boot because the Ubuntu 22.04 <code>chromium-browser</code> package is a snap wrapper shim with no snapd available in the container; (3) the codebase has zero tests and multiple AGENTS.md mandate violations (no structured logging fields, no Zod in the extension, no DESIGN.md). On the positive side: the extension's <code>background.ts</code>/<code>content.ts</code> is the most complete component, correctly implementing the Golden Rule dispatch pattern with <code>@mcp-b</code> packages; the Rust server's tracing-to-stderr discipline is correct; and both halves build cleanly (WXT and <code>cargo build --release</code>).</p>
+</section>
+
+<section id="architecture">
+  <h2>Architecture Diagram (actual vs. documented)</h2>
+  <pre><code>Documented (AGENTS.md / README):
+  Agent ──SSE:3000──► Rust (rmcp) ──WS:8765──► Extension ──modelContext──► Page
+                          │
+                      Xvfb:99, VNC:5900, CDP:9222
+
+Actual (Sprint 0):
+  Agent ──SSE:3000──► Rust (axum stub, one-shot event)  ╳  WS:8765 not bound
+                          │
+                      Xvfb:99 ✅  VNC:5900 ✅  CDP:9222 ╳ (Chrome crashed)</code></pre>
+</section>
+
+<section id="breakdown">
+  <h2>Component Breakdown</h2>
+
+  <table>
+    <thead><tr><th>Component</th><th>Responsibility</th><th>Technology</th><th>Builds?</th><th>Runs?</th></tr></thead>
+    <tbody>
+      <tr><td><code>mcp-server</code></td><td>MCP SSE server + WS relay to extension</td><td>Rust: tokio, axum, tracing-subscriber, clap, serde_json</td><td>✅ <code>cargo build --release</code></td><td>✅ SSE stub only</td></tr>
+      <tr><td><code>webmcp-extension</code></td><td>MV3 extension: WS relay + polyfill injection</td><td>WXT, @mcp-b/*, chrome.scripting</td><td>✅ <code>npm run build</code></td><td>⚠️ Not testable (Chrome crashed)</td></tr>
+      <tr><td><code>docker/Dockerfile</code></td><td>3-stage container build + runtime</td><td>Docker: rust:1-bookworm → node:22-bookworm → ubuntu:22.04</td><td>✅ All 3 stages</td><td>⚠️ Chrome fails</td></tr>
+      <tr><td><code>docker/start.sh</code></td><td>Entrypoint: Xvfb, VNC, server, Chrome</td><td>Bash, 29 lines</td><td>N/A</td><td>⚠️ Line 11: log says "WS :8765" but server ignores it</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="strengths">
+  <h2>Strengths</h2>
+  <ul>
+    <li><strong>Extension Golden Rule compliance</strong>: <code>background.ts</code> and <code>content.ts</code> exclusively use <code>document.modelContext.executeTool()</code> and <code>.getTools()</code> — zero <code>eval()</code> or manual DOM traversal. Grep across <code>src/</code> confirms zero matches for <code>eval\(</code> or <code>page\.evaluate</code>.</li>
+    <li><strong>tracing → stderr is correct</strong>: <code>main.rs:45</code> uses <code>.with_writer(std::io::stderr)</code>. Zero <code>println!</code> calls in the Rust source. The stream-corruption guard is already in place.</li>
+    <li><strong>Docker build is fully cacheable</strong>: all 3 stages use layer caching correctly (Cargo.toml/package.json copied first, then source). Rebuilds are fast.</li>
+    <li><strong>Wire protocol is already defined and typed</strong>: <code>background.ts:16–70</code> defines the JSON envelope format the server must implement — <code>call_tool</code>, <code>discover_tools</code>, <code>tool_result</code>, <code>tool_error</code>, <code>discover_result</code> — with <code>id</code>-based correlation. The server side is the only missing half.</li>
+    <li><strong><code>start.sh</code> is 29 lines</strong>: meets the &le;30-line mandate from AGENTS.md:106.</li>
+    <li><strong>WXT build succeeds</strong>: outputs <code>.output/chrome-mv3/</code> with manifest, background.js, and content-scripts in 465ms.</li>
+  </ul>
+</section>
+
+<section id="weaknesses">
+  <h2>Weaknesses (Critical Risks)</h2>
+
+  <table>
+    <thead><tr><th>Weakness</th><th>Risk Level</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Chromium snap wrapper crash</td>
+        <td><strong>Critical</strong></td>
+        <td>Ubuntu 22.04 <code>chromium-browser</code> package installs a shell script that tries to exec <code>/snap/bin/chromium</code>. Snap is not available in the Docker container (no systemd, no snapd). Chromium exits immediately with the "requires the chromium snap" error. The browser never starts; CDP :9222 returns connection refused; the extension is never loaded. This blocks all end-to-end testing — independent of the relay gap.</td>
+      </tr>
+      <tr>
+        <td>No :8765 WebSocket listener</td>
+        <td><strong>Critical</strong></td>
+        <td><code>mcp-server/src/main.rs</code> has no WS server. The extension's <code>background.ts:2</code> connects to <code>ws://127.0.0.1:8765</code> — confirmed closed (connection refused on port probe). <code>start.sh:11</code> log message says "starting MCP translation server (SSE :3000, WS :8765)" but only :3000 is bound. The relay is the single largest server-side gap.</td>
+      </tr>
+      <tr>
+        <td>rmcp + schemars absent</td>
+        <td><strong>Critical</strong></td>
+        <td>Neither <code>rmcp</code> nor <code>schemars</code> appear in <code>mcp-server/Cargo.toml</code>. The SSE endpoint is a raw <code>axum::sse::Sse::new(stream::iter(...))</code> emitting one hard-coded <code>notifications/initialized</code> event (not real MCP). <code>AGENTS.md:92</code> mandates <code>rmcp = { features = ["server","transport-io","transport-sse-server"] }</code> — entirely missing.</td>
+      </tr>
+      <tr>
+        <td>src/tools.rs does not exist</td>
+        <td><strong>High</strong></td>
+        <td><code>mcp-server/README.md:15</code> claims <code>src/tools.rs</code> contains <code>#[rmcp::tool]</code> stubs for discover, get_page_state, relay. The file does not exist. The only source file under <code>mcp-server/src/</code> is <code>main.rs</code>. No <code>#[rmcp::tool]</code> macros exist anywhere in the repo.</td>
+      </tr>
+      <tr>
+        <td>No structured logging fields</td>
+        <td><strong>High</strong></td>
+        <td><code>AGENTS.md:59</code> mandates <code>correlation_id</code>, <code>tool_name</code>, and <code>ws_session_id</code> in all log events. <code>main.rs</code> only uses flat <code>info!</code> calls — no span fields are attached. This is testable but unimplemented.</td>
+      </tr>
+      <tr>
+        <td>Zero test coverage</td>
+        <td><strong>Medium</strong></td>
+        <td><code>cargo test</code> compiles but runs 0 tests (no <code>#[test]</code> in any <code>.rs</code> file). Extension has no <code>test</code> script in <code>package.json</code> and no <code>vitest</code> dependency. <code>AGENTS.md:101</code> defers extension unit tests to Sprint 1 — acknowledged.</td>
+      </tr>
+      <tr>
+        <td>Zod validation missing</td>
+        <td><strong>Medium</strong></td>
+        <td><code>AGENTS.md:65</code> mandates "Zod validation for extension-side tool arguments before forwarding to the page." No <code>zod</code> import, dependency, or validation logic exists in the extension source. Grep returned zero matches.</td>
+      </tr>
+      <tr>
+        <td>DESIGN.md not created</td>
+        <td><strong>Low</strong></td>
+        <td><code>AGENTS.md:160</code> lists DESIGN.md as a reference file "needs creation in Sprint 0." File does not exist.</td>
+      </tr>
+      <tr>
+        <td>--transport stdio parsed but unused</td>
+        <td><strong>Low</strong></td>
+        <td><code>main.rs:13</code> declares a <code>--transport</code> clap arg (default "sse") but <code>main.rs:48</code> never branches on it — only the SSE path exists. The <code>transport-io</code> rmcp feature (mandated) would drive this.</td>
+      </tr>
+      <tr>
+        <td>tsc type errors in extension</td>
+        <td><strong>Low</strong></td>
+        <td><code>npx tsc --noEmit</code> reports 6 errors: <code>defineBackground</code>/<code>defineContentScript</code> not found (WXT globals missing type declarations) and <code>document.modelContext</code> not on <code>Document</code> type (<code>@mcp-b/webmcp-types</code> types not resolved). WXT build succeeds regardless because WXT handles its own type resolution. Cosmetic for now but should be addressed in the tsconfig.</td>
+      </tr>
+      <tr>
+        <td>No Cargo.lock committed</td>
+        <td><strong>Low</strong></td>
+        <td>The repo has no <code>Cargo.lock</code> and no <code>package-lock.json</code>. gitignore should be reviewed; for a binary crate, <code>Cargo.lock</code> should typically be committed.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="docs-drift">
+  <h2>Documentation vs. Code Drift</h2>
+  <table>
+    <thead><tr><th>Doc</th><th>Line</th><th>Claim</th><th>Actual</th></tr></thead>
+    <tbody>
+      <tr><td><code>mcp-server/README.md</code></td><td>15</td><td>"<code>src/tools.rs</code> — <code>#[rmcp::tool]</code> stubs (discover, get_page_state, relay)"</td><td>File does not exist</td></tr>
+      <tr><td><code>AGENTS.md</code></td><td>20</td><td>"Rust binary (rmcp + tokio)"</td><td>rmcp not in Cargo.toml</td></tr>
+      <tr><td><code>AGENTS.md</code></td><td>92</td><td>"Feature flags: <code>rmcp = { features = ["server", "transport-io", "transport-sse-server"] }</code>"</td><td>Not present in Cargo.toml</td></tr>
+      <tr><td><code>AGENTS.md</code></td><td>64</td><td>"Use <code>schemars</code> for JSON schema derivation"</td><td>Not in Cargo.toml</td></tr>
+      <tr><td><code>AGENTS.md</code></td><td>59</td><td>"include <code>correlation_id</code>, <code>tool_name</code>, and <code>ws_session_id</code> in all log events"</td><td>No structured fields in tracing calls</td></tr>
+      <tr><td><code>AGENTS.md</code></td><td>65</td><td>"Zod validation for extension-side tool arguments"</td><td>Not present</td></tr>
+      <tr><td><code>mcp-server/README.md</code></td><td>32-33</td><td>"all logging goes to <strong>stderr</strong> via <code>tracing-subscriber</code>"</td><td>✅ Correct — matches <code>main.rs:45</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="recommendations">
+  <h2>Recommendations</h2>
+
+  <section>
+    <h3>Immediate (Sprint 1)</h3>
+    <ul>
+      <li><strong>Fix Chromium runtime</strong>: replace the Ubuntu 22.04 snap wrapper with a direct Chromium binary (e.g. from Google's PPA, a downloaded <code>.deb</code>, or switch the runtime base to Debian bookworm which has a real <code>chromium</code> package). This unblocks all browser-dependent testing.</li>
+      <li><strong>Add rmcp + schemars</strong>: wire the mandated <code>rmcp</code> SSE transport, replace the stub, and create <code>src/tools.rs</code> with <code>#[rmcp::tool]</code> definitions using <code>schemars</code>-derived JSON schemas.</li>
+      <li><strong>Add :8765 WS listener</strong>: reuse axum's <code>ws</code> feature (no new crate) to bind the relay. Forward <code>call_tool</code>/<code>discover_tools</code> envelopes matching <code>background.ts</code>'s wire protocol exactly.</li>
+      <li><strong>Add structured logging fields</strong>: <code>correlation_id</code> (= JSON-RPC request id), <code>tool_name</code>, <code>ws_session_id</code> on all tool-call log events.</li>
+      <li><strong>Fix mcp-server/README.md drift</strong>: update to reflect actual code once <code>src/tools.rs</code> exists.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h3>Strategic (Future Sprints)</h3>
+    <ul>
+      <li><strong>Add test coverage</strong>: introduce vitest for the extension and <code>#[test]</code> for the Rust server. Minimum bar: a single end-to-end smoke test proving the discover→call→respond loop.</li>
+      <li><strong>Implement --transport stdio</strong>: once <code>rmcp</code>'s <code>transport-io</code> feature is wired, branch on the already-parsed <code>--transport</code> arg.</li>
+      <li><strong>Add Zod validation</strong>: wrap tool arguments in <code>background.ts</code> with Zod schemas before forwarding to <code>document.modelContext.executeTool()</code>.</li>
+      <li><strong>Fix WXT type declarations</strong>: configure tsconfig to resolve <code>defineBackground</code>/<code>defineContentScript</code> globals and <code>document.modelContext</code> types so <code>tsc --noEmit</code> passes clean.</li>
+      <li><strong>Create DESIGN.md</strong>: document design tokens — referenced by AGENTS.md but deferred.</li>
+    </ul>
+  </section>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../index.html">Docs Home</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Baseline Quality Audit</span>
+</nav>
+
+</article>
+
+</body>
+</html>

@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sprint 0: Bootstrap &amp; Baseline — Phase 0 — v0.0-baseline</title>
+<title>Sprint 0: Bootstrap & Verification — Phase 0 — v0.0-baseline</title>
 <link rel="stylesheet" href="../../../../css/docs-base.css">
 </head>
 <body>
 
-<article data-doc-type="sprint-plan" data-epic="v0.0-baseline" data-phase="0" data-sprint="0" data-status="planned">
+<article data-doc-type="sprint-plan" data-epic="v0.0-baseline" data-phase="0" data-sprint="0" data-status="completed">
 
 <header>
-  <h1>Sprint 0: Bootstrap &amp; Baseline</h1>
+  <h1>Sprint 0: Bootstrap &amp; Verification</h1>
   <div class="meta">
     <span>Phase: 0</span>
     <span>Sprint: 0</span>
@@ -21,12 +21,12 @@
 
 <section id="objective">
   <h2>Objective</h2>
-  <p>Establish the documentation baseline for webmcp-sandbox: create architecture documentation, run initial codebase audits, and populate this sprint with project-specific tasks. This sprint is auto-created by Spiderweb bootstrap — populate it with your project's actual work.</p>
+  <p>Characterize the current scaffold state of webmcp-sandbox against the <code>webmcp-sandbox:latest</code> Docker image, produce the missing architecture and audit documentation, and define a factual baseline (lint, typecheck/build, test coverage) so that Sprint 1 can implement the end-to-end bridge with a clear acceptance surface.</p>
 </section>
 
 <section id="rationale">
   <h2>Rationale &amp; Context</h2>
-  <p>Every project needs a starting point. This sprint captures the initial assessment of the codebase so future sprints can reference the baseline architecture and audit findings.</p>
+  <p>The repo is at scaffold stage: an 836MB Docker image exists and boots, the extension bridge (<code>background.ts</code>/<code>content.ts</code>) is the most complete component, but the Rust server is a stub — no <code>rmcp</code> dependency, no <code>#[rmcp::tool]</code> definitions, no WebSocket listener on <code>:8765</code>, and a hard-coded one-shot SSE event. The in-repo documentation (README claims of <code>src/tools.rs</code>) is drifted from the actual code. This sprint quantifies that state without writing new feature code, and feeds its findings into Sprint 1.</p>
 </section>
 
 <section id="scope">
@@ -35,18 +35,24 @@
   <section id="in-scope">
     <h3>In-Scope</h3>
     <ul>
-      <li>Create <code>Docs/architecture/system-overview.html</code> describing the project's architecture, component topology, and data flow</li>
-      <li>Run <code>pnpm lint</code> to assess code quality baseline</li>
-      <li>Run <code>pnpm typecheck</code> to assess type coverage</li>
-      <li>Create <code>Docs/audits/baseline-quality.html</code> summarizing findings</li>
+      <li>Run <code>webmcp-sandbox:latest</code> and probe ports 3000 (SSE), 5900 (VNC), 9222 (CDP), and 8765 (WS, expected absent)</li>
+      <li>Confirm the extension ECONNREFUSED retry loop is observably the reason the bridge cannot function today</li>
+      <li>Audit README/AGENTS vs. code drift (e.g. <code>mcp-server/README.md</code> referencing a non-existent <code>src/tools.rs</code>)</li>
+      <li>Author <code>Docs/architecture/system-overview.html</code></li>
+      <li>Run Rust lint/build (<code>cargo fmt --check</code>, <code>clippy -D warnings</code>, <code>cargo build --release</code>) in builder Docker stages — no host toolchain required</li>
+      <li>Run extension lint/build (<code>npx tsc --noEmit</code>, <code>npm run build</code>) in builder Docker stages</li>
+      <li>Record test-suite baseline (currently zero tests / no runner configured)</li>
+      <li>Author <code>Docs/audits/baseline-quality.html</code> capturing all findings</li>
+      <li>Decide the next epic from the audit — input to Sprint 1</li>
     </ul>
   </section>
 
   <section id="out-of-scope">
     <h3>Out-of-Scope</h3>
     <ul>
-      <li>Fixing lint/type issues found during audit — those go in future sprints</li>
-      <li>Writing exhaustive component-level documentation — architecture overview is sufficient</li>
+      <li>Adding <code>rmcp</code>/<code>schemars</code>, WS listener, or tool definitions — that is Sprint 1</li>
+      <li>Fixing lint/typecheck issues surfaced by the audit — Sprint 1 or later</li>
+      <li>Stand-up of a host cargo/node toolchain — all audits run inside the Docker builder stages</li>
     </ul>
   </section>
 </section>
@@ -54,53 +60,90 @@
 <section id="execution-plan">
   <h2>Execution Plan</h2>
 
-  <h3>1. Architecture Documentation</h3>
+  <h3>1. Scaffold Verification</h3>
   <ol>
     <li data-task-id="1.1">
-      <input type="checkbox">
+      <input checked type="checkbox">
       <div>
-        <strong>Task 1.1: Write system overview architecture doc</strong>
-        <data data-files="Docs/architecture/system-overview.html"></data>
-        <p>Create an architecture document covering: project purpose, component topology (services, databases, external APIs), data flow between components, and key design decisions. Use the structure from <code>Docs/templates/reference.html</code>.</p>
+        <strong>Task 1.1: Run current image, confirm SSE/VNC/CDP come up</strong>
+        <data data-files="docker/start.sh docker/Dockerfile mcp-server/src/main.rs"></data>
+        <p>Run <code>docker run -d --name webmcp-verify -p 3000:3000 -p 5900:5900 webmcp-sandbox:latest</code>, then from the host probe: <code>curl -N http://localhost:3000/sse</code> (expect the one-shot <code>notifications/initialized</code> stub event + 15s keep-alive per <code>mcp-server/src/main.rs</code>), <code>nc -z localhost 5900</code> (VNC), and <code>docker exec webmcp-verify curl -s http://127.0.0.1:9222/json/version</code> (CDP, internal-only by design). Record exact observed payloads/timing into the audit doc.</p>
+      </div>
+    </li>
+    <li data-task-id="1.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 1.2: Confirm the :8765 WS gap and extension ECONNREFUSED loop</strong>
+        <data data-files="mcp-server/src/main.rs webmcp-extension/src/entrypoints/background.ts"></data>
+        <p>From inside the container, <code>docker exec webmcp-verify sh -c 'curl -sS http://127.0.0.1:8765'</code> must fail (port not bound). Tail <code>docker logs -f webmcp-verify</code> and confirm the extension's auto-reconnect retry storm from <code>background.ts</code>. This pins the documented Sprint-1 cliff: the relay is the single biggest functional gap.</p>
+      </div>
+    </li>
+    <li data-task-id="1.3">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 1.3: README/AGENTS vs. code drift audit</strong>
+        <data data-files="mcp-server/README.md AGENTS.md"></data>
+        <p>Inventory statements in <code>mcp-server/README.md</code> and <code>AGENTS.md</code> that describe files/features that do not exist (notably <code>mcp-server/README.md:15</code> claims <code>src/tools.rs</code> with <code>#[rmcp::tool]</code> stubs — the file is absent). Capture the list verbatim into <code>Docs/audits/baseline-quality.html</code> and note that <code>check-doc-drift.mjs</code> will not catch it (prose-only).</p>
       </div>
     </li>
   </ol>
 
-  <h3>2. Codebase Audits</h3>
+  <h3>2. Architecture Documentation</h3>
   <ol>
     <li data-task-id="2.1">
-      <input type="checkbox">
+      <input checked type="checkbox">
       <div>
-        <strong>Task 2.1: Run lint audit and document findings</strong>
-        <data data-files="Docs/audits/baseline-quality.html"></data>
-        <p>Run the project's linter. Record the number of errors and warnings. Note any patterns (e.g., "20 no-explicit-any warnings clustered in legacy auth module").</p>
-      </div>
-    </li>
-    <li data-task-id="2.2">
-      <input type="checkbox">
-      <div>
-        <strong>Task 2.2: Run typecheck and document findings</strong>
-        <data data-files="Docs/audits/baseline-quality.html"></data>
-        <p>Run the project's typechecker. Record whether it passes. If there are errors, list the files with the most errors.</p>
-      </div>
-    </li>
-    <li data-task-id="2.3">
-      <input type="checkbox">
-      <div>
-        <strong>Task 2.3: Run test suite and document coverage baseline</strong>
-        <data data-files="Docs/audits/baseline-quality.html"></data>
-        <p>Run the project's test suite. Record pass/fail counts and coverage percentage if available.</p>
+        <strong>Task 2.1: Write system overview architecture doc</strong>
+        <data data-files="Docs/architecture/system-overview.html"></data>
+        <p>Create <code>Docs/architecture/system-overview.html</code> from <code>Docs/templates/reference.html</code> describing: project purpose (containerized ephemeral browser sandbox for WebMCP agents), the 3-component topology (Rust MCP server, MV3 extension, Docker runtime), data flow (agent→SSE:3000→rmcp→WS:8765→extension→<code>document.modelContext</code>→page), port table, the Golden Rule (no JS injection), and the known gap that Sprint 1 closes. Reflect actual scaffold state, not aspiration.</p>
       </div>
     </li>
   </ol>
 
-  <h3>3. Planning</h3>
+  <h3>3. Codebase Audits (Docker builder stages)</h3>
   <ol>
     <li data-task-id="3.1">
-      <input type="checkbox">
+      <input checked type="checkbox">
       <div>
-        <strong>Task 3.1: Identify next epic based on audit findings</strong>
-        <p>Based on the audit results, determine the highest-priority area for the next epic. Common examples: type safety cleanup, test coverage improvement, performance optimization, documentation expansion.</p>
+        <strong>Task 3.1: Rust lint audit — cargo fmt + clippy</strong>
+        <data data-files="mcp-server/Cargo.toml mcp-server/src/main.rs"></data>
+        <p>Build the rust-builder stage in isolation and run lint checks within it, avoiding host toolchain setup: <code>docker build --target rust-builder -t ws-audit-rust -f docker/Dockerfile .</code> then <code>docker run --rm ws-audit-rust sh -c 'cargo fmt --check &amp;&amp; cargo clippy --all-targets -- -D warnings'</code>. Record pass/fail and any specific findings (unused args like the parsed-but-unbranched <code>--transport</code> flag).</p>
+      </div>
+    </li>
+    <li data-task-id="3.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 3.2: Typecheck/build audit — Rust + extension</strong>
+        <data data-files="mcp-server/Cargo.toml webmcp-extension/package.json webmcp-extension/wxt.config.ts"></data>
+        <p>For Rust: <code>docker run --rm ws-audit-rust sh -c 'cargo build --release'</code>. For the extension: <code>docker build --target ext-builder -t ws-audit-ext -f docker/Dockerfile .</code> then <code>docker run --rm ws-audit-ext sh -c 'npx tsc --noEmit &amp;&amp; npm run build'</code>. Record whether each builds and any non-zero exit artifacts. Note the absence of a committed <code>Cargo.lock</code> and extension lockfile.</p>
+      </div>
+    </li>
+    <li data-task-id="3.3">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 3.3: Test-suite baseline</strong>
+        <data data-files="mcp-server/Cargo.toml webmcp-extension/package.json"></data>
+        <p>Establish the factual baseline: zero <code>#[test]</code> in <code>mcp-server/src/</code>; no <code>vitest</code> dependency and no <code>test</code> script in <code>webmcp-extension/package.json</code>; AGENTS.md defers extension unit tests to Sprint 1. The audit finding for this task is "0 tests, 0 runners configured" — a documented baseline, not a failure.</p>
+      </div>
+    </li>
+    <li data-task-id="3.4">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 3.4: Author baseline-quality audit doc</strong>
+        <data data-files="Docs/audits/baseline-quality.html"></data>
+        <p>Write <code>Docs/audits/baseline-quality.html</code> from <code>Docs/templates/audit.html</code> consolidating the findings of tasks 1.1–1.3 and 3.1–3.3 into a structured audit: what boots, what is stubbed, lint/typecheck/build outcomes, test baseline, drift list, and the Sprint-1 priorities that follow.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. Planning</h3>
+  <ol>
+    <li data-task-id="4.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 4.1: Identify next epic — draft Sprint 1 scope</strong>
+        <data data-files="Docs/epics/v0.0-baseline/phase-0/sprint-1-e2e-bridge/sprint.html"></data>
+        <p>From the audit findings, confirm the next chunk of work is implementing the end-to-end bridge: <code>rmcp</code>+<code>schemars</code> deps, a <code>src/tools.rs</code> with <code>#[rmcp::tool]</code> definitions, replacing the stub SSE handler, adding the <code>:8765</code> WS relay (reusing axum's <code>ws</code> feature, no new crate), full structured logging (<code>correlation_id</code>/<code>tool_name</code>/<code>ws_session_id</code>), an E2E fixture, and a stdout-clean smoke test. Sprint 1's plan is authored from this task; task checkboxes here flip as Sprint 1 work lands.</p>
       </div>
     </li>
   </ol>
@@ -112,9 +155,11 @@
     <thead><tr><th>Component</th><th>Technology</th></tr></thead>
     <tbody>
       <tr><td>Docs system</td><td>Spiderweb (HTML semantic docs + ESM scripts)</td></tr>
-      <tr><td>Linting</td><td>ESLint</td></tr>
-      <tr><td>Type checking</td><td>TypeScript</td></tr>
-      <tr><td>Testing</td><td>Vitest / Jest / (project-specific)</td></tr>
+      <tr><td>Rust linting/format</td><td>cargo fmt, cargo clippy (-D warnings)</td></tr>
+      <tr><td>Rust build</td><td>cargo build --release (rust-builder Docker stage)</td></tr>
+      <tr><td>Extension build</td><td>WXT (npm run build) + tsc --noEmit (ext-builder Docker stage)</td></tr>
+      <tr><td>Container runtime</td><td>webmcp-sandbox:latest (3-stage Dockerfile: rust→ext→ubuntu+Chrome)</td></tr>
+      <tr><td>Testing</td><td>None configured (baseline = 0 tests); Vitest + #[test] deferred to Sprint 1</td></tr>
     </tbody>
   </table>
 </section>
@@ -137,13 +182,20 @@
       <span>All docs pass validation with zero violations</span>
       <code>node Docs/scripts/validate-docs.mjs --verbose</code>
     </li>
+    <li>
+      <input type="checkbox">
+      <span>Sprint 1 plan authored from task 4.1 findings</span>
+      <code>Docs/epics/v0.0-baseline/phase-0/sprint-1-e2e-bridge/sprint.html</code>
+    </li>
   </ul>
 </section>
 
 <nav class="breadcrumb" aria-label="Breadcrumb">
   <a href="../../index.html">v0.0-baseline</a>
   <span aria-hidden="true"> / </span>
-  <span aria-current="page">Sprint 0: Bootstrap &amp; Baseline</span>
+  <a href="../index.html">Phase 0</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 0: Bootstrap &amp; Verification</span>
 </nav>
 
 </article>

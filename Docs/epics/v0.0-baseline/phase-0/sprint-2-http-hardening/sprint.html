@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 2: HTTP-Only Hardening — Phase 0 — v0.0-baseline</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v0.0-baseline" data-phase="0" data-sprint="2" data-status="completed">
+
+<header>
+  <h1>Sprint 2: HTTP-Only Hardening</h1>
+  <div class="meta">
+    <span>Phase: 0</span>
+    <span>Sprint: 2</span>
+    <span>Depends on: Sprint 1</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Close the three architectural gaps identified after Sprint 1: (a) drop stdio transport and switch to rmcp's built-in <code>StreamableHttpService</code> for HTTP-only SSE; (b) eliminate the polyfill registration deadlock by injecting the polyfill into the page's MAIN world at <code>document_start</code> — guaranteeing <code>document.modelContext</code> exists before any page script runs; (c) fix multi-param tool support by wrapping tool inputs in <code>Parameters&lt;T&gt;</code> so the <code>#[tool_router]</code> macro generates correct <code>CallToolHandler</code> impls. Also add WebSocket keep-alive (server-initiated ping/pong to prevent MV3 service worker 30s idle disconnect), Zod validation on extension tool arguments, and resolve the remaining Sprint 1 formatting/cleanup drift.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>Sprint 1 proved the full relay loop works but left three root-cause issues unaddressed: (1) the polyfill installs <code>document.modelContext</code> only in the realm where it evaluates — our content script ran in MV3's isolated world, so the page's main world never saw it (tools returned empty/null regardless of timing — not a race, a deadlock); (2) bare tool input structs without <code>Parameters&lt;T&gt;</code> wrapper failed <code>IntoToolRoute</code> because the macro fingerprint-matches the literal type name and <code>FromContextPart</code> has no blanket impl; (3) the stdio transport path was an empty stub and the manual JSON-RPC string dispatch in <code>message_handler</code> (~100 lines) was brittle. This sprint replaces each system with its correct rmcp canon. Additionally: the MV3 service worker disconnects after ~30s idle because no keep-alive traffic flows on the raw WebSocket (the <code>@mcp-b/transports</code> keep-alive only covers <code>chrome.runtime.Port</code> messaging, not raw WS); AGENTS.md:65 mandates Zod validation which was not implemented; and Sprint 1 left behind formatting drift and a dead-field clippy warning.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Drop <code>transport-io</code> from Cargo.toml; delete <code>run_stdio</code> and the <code>--transport</code> clap arg</li>
+      <li>Switch SSE from hand-rolled axum handler to rmcp's <code>StreamableHttpService</code> (feature <code>transport-streamable-http-server</code>) — eliminates the manual <code>message_handler</code> JSON-RPC string dispatch</li>
+      <li>Wrap tool inputs in <code>Parameters&lt;T&gt;</code>; use <code>#[tool_router(server_handler)]</code> to auto-emit the <code>impl ServerHandler</code> block</li>
+      <li>Delete manual <code>ToolDef</code> struct and <code>tool_definitions()</code> schema plumbing — rmcp's router generates schema from <code>Parameters&lt;T&gt;</code></li>
+      <li>Inject the polyfill into the page's MAIN world via manifest static content_scripts with <code>world: "MAIN"</code> + <code>run_at: "document_start"</code></li>
+      <li>Switch <code>chrome.scripting.executeScript</code> calls in background.ts to <code>world: "MAIN"</code> so injected functions share the polyfill's <code>StrictWebMCPContext</code></li>
+      <li>Strip non-serializable fields (<code>window</code>, <code>title</code>, <code>origin</code>) from <code>discoverPageTools</code> response; <code>JSON.parse</code> the <code>inputSchema</code> string to an object before WS relay</li>
+      <li>Server-side 20s interval ping (<code>{type:"ping", id}</code>) over WS; background.ts responds with pong</li>
+      <li>Zod validation on <code>background.ts</code> tool arguments before forwarding to <code>document.modelContext.executeTool</code></li>
+      <li>Run <code>cargo fmt</code> to clear formatting drift; drop dead <code>ExtensionRequest.id</code> field</li>
+      <li>Atomic vertical slice: group 1–6 land together in one Docker build cycle; all 13 verification gates must pass before any task is checked off</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Vitest/ extension unit tests — explicitly deferred</li>
+      <li>CI pipeline — manual Docker rebuild + gates is the verification surface</li>
+      <li><code>docker/Dockerfile</code> or <code>docker/start.sh</code> changes — already correct from Sprint 1</li>
+      <li>Additional tools beyond the existing <code>discover_tools</code> / <code>execute_tool</code> relay pair</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. HTTP-Only Transport</h3>
+  <ol>
+    <li data-task-id="1.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 1.1: Drop transport-io, run_stdio, and --transport clap arg</strong>
+        <data data-files="mcp-server/Cargo.toml mcp-server/src/main.rs"></data>
+        <p>Remove <code>"transport-io"</code> from rmcp features in Cargo.toml. Delete the <code>--transport</code> field from <code>Args</code> and the <code>run_stdio</code> function from main.rs. SSE is the only transport.</p>
+      </div>
+    </li>
+    <li data-task-id="1.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 1.2: Switch SSE to StreamableHttpService</strong>
+        <data data-files="mcp-server/Cargo.toml mcp-server/src/main.rs"></data>
+        <p>Change rmcp features to <code>["transport-streamable-http-server"]</code> (transitively pulls <code>server</code>, <code>macros</code>, <code>schemars</code>, <code>server-side-http</code>). Wire <code>StreamableHttpService::new(service_factory, session_manager, config)</code> to an axum <code>Router</code> on <code>:3000</code>. This eliminates the entire manual <code>message_handler</code> JSON-RPC string dispatch (~100 lines deleted). After this, <code>tools/list</code> and <code>tools/call</code> are handled by rmcp's built-in <code>ServerHandler::handle_request</code> — we never touch raw <code>"initialize"</code>/<code>"tools/list"</code>/<code>"tools/call"</code> string matching again.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. MAIN-World Polyfill Injection</h3>
+  <ol>
+    <li data-task-id="2.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 2.1: Declare content script with world:MAIN + run_at:document_start</strong>
+        <data data-files="webmcp-extension/src/entrypoints/content.ts webmcp-extension/wxt.config.ts"></data>
+        <p>Add <code>world: "MAIN"</code> and <code>run_at: "document_start"</code> to <code>defineContentScript</code>. Chrome runs MAIN-world content_scripts at document_start BEFORE the page's first <code>&lt;script&gt;</code>. Combined with the polyfill's synchronous init (<code>index.d.ts:53</code>: <code>void</code> return, no dynamic imports), <code>document.modelContext</code> is guaranteed present in main world before any page code executes. The fixture page no longer needs a polling loop.</p>
+      </div>
+    </li>
+    <li data-task-id="2.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 2.2: Switch executeScript calls to world:MAIN</strong>
+        <data data-files="webmcp-extension/src/entrypoints/background.ts"></data>
+        <p>Add <code>world: "MAIN"</code> to both <code>chrome.scripting.executeScript</code> calls in background.ts (for <code>callPageTool</code> and <code>discoverPageTools</code>). Without this, injected functions run in the default ISOLATED world where the polyfill is absent — they'd never see the registered tools. Post-fix, both the polyfill and the injected query functions share a single <code>StrictWebMCPContext</code> with a single tool <code>Map</code>.</p>
+      </div>
+    </li>
+    <li data-task-id="2.3">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 2.3: Normalize discoverPageTools response for WS serialization</strong>
+        <data data-files="webmcp-extension/src/entrypoints/background.ts"></data>
+        <p>Strip non-serializable fields from the <code>discoverPageTools</code> response: the polyfill returns <code>{name, description, inputSchema, title, origin, window}</code> where <code>window</code> is a live <code>Window</code> object that won't cross the WebSocket boundary, and <code>inputSchema</code> is a JSON <strong>string</strong>. Parse <code>inputSchema</code> back to an object and strip the <code>window</code>/<code>title</code>/<code>origin</code> fields before forwarding over WS.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Multi-Param rmcp Tools</h3>
+  <ol>
+    <li data-task-id="3.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 3.1: Wrap tool inputs in Parameters&lt;T&gt;</strong>
+        <data data-files="mcp-server/src/main.rs"></data>
+        <p>Import <code>rmcp::handler::server::wrapper::Parameters</code>. Change tool signatures to <code>async fn execute_tool(&amp;self, input: Parameters&lt;ExecuteToolInput&gt;) -&gt; Result&lt;model::CallToolResult, rmcp::ErrorData&gt;</code>. Access inner via <code>input.0</code>. <code>Parameters&lt;P: DeserializeOwned&gt;</code> implements <code>FromContextPart</code> which deserializes the MCP <code>arguments</code> JSON into <code>P</code> automatically — we delete the manual <code>serde_json::from_value</code> plumbing. The macro fingerprint-matches the literal type name to generate correct <code>CallToolHandler</code> impls.</p>
+      </div>
+    </li>
+    <li data-task-id="3.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 3.2: Use #[tool_router(server_handler)] consolidation</strong>
+        <data data-files="mcp-server/src/main.rs"></data>
+        <p>Replace the separate <code>#[rmcp::tool_router]</code> + <code>#[rmcp::tool_handler] impl ServerHandler for McpHandler {}</code> with <code>#[rmcp::tool_router(server_handler)]</code>. The <code>server_handler</code> flag auto-emits the <code>impl ServerHandler</code> block per <code>MAC/src/tool_router.rs:90-95</code>. Also delete the <code>ToolDef</code> struct and <code>tool_definitions()</code> plumbing — the router's <code>list_all()</code> handles tool listing from the registered <code>#[tool]</code> functions.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. WS Keep-Alive</h3>
+  <ol>
+    <li data-task-id="4.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 4.1: Server-side 20s ping interval over WS</strong>
+        <data data-files="mcp-server/src/main.rs"></data>
+        <p>In <code>extension_ws_task</code>, spawn a <code>tokio::spawn</code> task that loops every 20s and sends <code>{type:"ping", id:&lt;uuid&gt;}</code> over the WS. Stops when the WS connection closes. Pong responses from the extension are received in the existing WS receiver loop and silently ignored. This keeps the MV3 service worker alive past Chrome's 30s idle deadline.</p>
+      </div>
+    </li>
+    <li data-task-id="4.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 4.2: Extension pong handler</strong>
+        <data data-files="webmcp-extension/src/entrypoints/background.ts"></data>
+        <p>Add <code>if (msg.type === "ping") ws.send(JSON.stringify({type:"pong", id:msg.id}));</code> before the <code>call_tool</code>/<code>discover_tools</code> handlers in the <code>ws.onmessage</code> callback. Matches the <code>@mcp-b/transports</code> BACKGROUND_MESSAGE_TYPES naming convention.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>5. Zod Validation</h3>
+  <ol>
+    <li data-task-id="5.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 5.1: Add zod dependency</strong>
+        <data data-files="webmcp-extension/package.json"></data>
+        <p>Add <code>"zod": "^3"</code> to <code>webmcp-extension/package.json</code> devDependencies or dependencies.</p>
+      </div>
+    </li>
+    <li data-task-id="5.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 5.2: Zod-validate tool args before forwarding to page</strong>
+        <data data-files="webmcp-extension/src/entrypoints/background.ts"></data>
+        <p>In the <code>call_tool</code> handler, define a Zod schema for <code>args</code> and validate before calling <code>document.modelContext.executeTool</code>. Invalid args return a <code>tool_error</code> envelope with the validation error message, never forwarded to the page. This satisfies <code>AGENTS.md:65</code> mandate "Zod validation for extension-side tool arguments before forwarding to the page."</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>6. Cleanup</h3>
+  <ol>
+    <li data-task-id="6.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 6.1: cargo fmt</strong>
+        <data data-files="mcp-server/src/main.rs"></data>
+        <p>Run <code>cargo fmt</code> to resolve the formatting drift noted in the Sprint 1 audit (import ordering, line-wrapping). After this, <code>cargo fmt --check</code> passes clean.</p>
+      </div>
+    </li>
+    <li data-task-id="6.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 6.2: Drop dead ExtensionRequest.id + cargo clippy clean</strong>
+        <data data-files="mcp-server/src/main.rs"></data>
+        <p>Remove the <code>id</code> field from <code>ExtensionRequest</code> (it was stored but never read in the WS send loop). Closes the <code>dead_code</code> clippy warning so <code>cargo clippy --all-targets -- -D warnings</code> passes clean.</p>
+      </div>
+    </li>
+    <li data-task-id="6.3">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 6.3: Simplify fixture page and drop background tab tracker hack</strong>
+        <data data-files="fixtures/hello.html webmcp-extension/src/entrypoints/background.ts"></data>
+        <p>Remove the <code>setTimeout</code> polling loop from <code>fixtures/hello.html</code> — with MAIN-world+document_start polyfill injection, the tool registration can call <code>registerTool()</code> at top level with no waiting. Remove the <code>fixtureTabId</code>/<code>getTargetTabs</code> Sprint-1 workaround from background.ts; keep a simple <code>chrome.tabs.query({})</code> fallback (reliable now that the SW won't go idle mid-call).</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>7. Verify &amp; Audit</h3>
+  <ol>
+    <li data-task-id="7.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 7.1: Run all 13 verification gates</strong>
+        <data data-files="mcp-server/src/main.rs docker/Dockerfile docker/start.sh"></data>
+        <p>Gates: (1) <code>cargo fmt --check</code> clean, (2) <code>cargo clippy -D warnings</code> clean, (3) <code>cargo build --release</code> clean, (4) <code>npx tsc --noEmit</code> clean, (5) <code>npm run build</code> clean, (6) Docker rebuild succeeds, (7) container boots all 4 ports, (8) determinism gate — 10 sequential <code>execute_tool</code> calls return greeting, not null, (9) <code>tools/list</code> returns 2 server tools with schemars schemas, (10) <code>discover_tools</code> returns page-registered <code>hello</code>, (11) structured logging ≥10 events, (12) stdout capture empty, (13) SW alive &gt;60s with ping/pong every 20s.</p>
+      </div>
+    </li>
+    <li data-task-id="7.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 7.2: Prove race elimination with determinism loop</strong>
+        <data data-files="fixtures/hello.html webmcp-extension/src/entrypoints/content.ts"></data>
+        <p>In a freshly-booted container, wait only 3 seconds (not the previous 12s), then issue <code>tools/call execute_tool {"name":"OpenCode"}</code> 10 times in a tight loop with no sleeps. All 10 responses MUST contain <code>{"greeting":"Hello, OpenCode! from WebMCP sandbox"}</code> — not null, not "tool not found", not an error. This gate fails the sprint if any call returns the wrong result. It demonstrates the page-script-timing problem is gone at the protocol level.</p>
+      </div>
+    </li>
+    <li data-task-id="7.3">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 7.3: Produce docs/audits/sprint-2-verification.html</strong>
+        <data data-files="Docs/audits/sprint-2-verification.html"></data>
+        <p>Create the Sprint 2 verification audit from <code>Docs/templates/audit.html</code>. Document: the sprint's 6 technical fixes with before/after evidence, all 13 gate results, and a race-elimination proof (the determinism loop output trace). Mark all gaps from Sprint 1's audit doc as resolved.</p>
+      </div>
+    </li>
+    <li data-task-id="7.4">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 7.4: Regenerate indices, validate docs, mark complete</strong>
+        <data data-files="Docs/"></data>
+        <p>Run <code>node Docs/scripts/populate-data-files.mjs --epic v0.0-baseline</code>, <code>node Docs/scripts/generate-index.mjs</code>, <code>node Docs/scripts/validate-docs.mjs --verbose</code>. Fix violations until clean. Flip task checkboxes via <code>mark-tasks-complete.mjs</code>. Update <code>epic-overview.html</code> phase-structure table to include Sprint 2.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>MCP server transport</td><td>rmcp StreamableHttpService (feature transport-streamable-http-server; no stdio, no transport-io)</td></tr>
+      <tr><td>Tool definitions</td><td>#[tool_router(server_handler)] + Parameters&lt;T&gt; wrapper; schemars auto-derivation</td></tr>
+      <tr><td>Polyfill injection</td><td>Manifest static content_scripts: world:"MAIN" + run_at:"document_start"</td></tr>
+      <tr><td>WS keep-alive</td><td>Server-initiated {type:"ping"} every 20s; extension responds {type:"pong"}</td></tr>
+      <tr><td>Input validation</td><td>Zod v3 on extension-side tool arguments</td></tr>
+      <tr><td>JS world bridging</td><td>chrome.scripting.executeScript({world:"MAIN"}) for all page-tool queries</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox">
+      <span>cargo fmt --check passes clean (formatting drift resolved)</span>
+      <code>docker run --rm &lt;builder&gt; sh -c 'cargo fmt --check'</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>cargo clippy -D warnings passes clean (dead code fixed)</span>
+      <code>docker run --rm &lt;builder&gt; sh -c 'cargo clippy --all-targets -- -D warnings'</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>StreamableHttpService serves MCP protocol on :3000; delete &gt;100 lines of hand-rolled dispatch</span>
+      <code>curl -sX POST :3000/message -d '{"method":"tools/list"}' → returns rmcp-routed response</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Polyfill installed in MAIN world; determinism loop 10/10 passes</span>
+      <code>for i in $(seq 1 10); do curl ... tools/call hello ... done</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>WS keep-alive: SW alive &gt;60s with ping/pong every 20s</span>
+      <code>docker logs &lt;ctr&gt; 2&gt;&amp;1 | grep -c ping</code> (≥3 after 65s)
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>No stdout output during MCP traffic</span>
+      <code>stdout capture empty during smoke loop</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Structured logging: correlation_id/tool_name/ws_session_id on every relay event</span>
+      <code>docker logs &lt;ctr&gt; 2&gt;&amp;1 | grep -c correlation_id</code> (≥ count of relay calls)
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Zod validation rejects malformed tool args before reaching page</span>
+      <code>background.ts sends tool_error on input validation failure</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Docs pass validate-docs.mjs with zero doc-level violations</span>
+      <code>node Docs/scripts/validate-docs.mjs --verbose</code>
+    </li>
+  </ul>
+</section>
+
+<section id="correction">
+  <h2>Correction (v0.1 Sprint 1)</h2>
+  <p>Sprint 2's claim that the MCP server uses <code>rmcp::StreamableHttpService</code> (Task 1.2) was <strong>aspirational</strong> at the time of writing. The actual transport shipped in v0.0 was a hand-rolled legacy SSE handler (<code>GET /sse</code> emits one <code>endpoint:/message</code> event then idles; <code>POST /message</code> replies with stateless JSON-RPC responses). The canonical <code>rmcp::StreamableHttpService</code> (with proper <code>Mcp-Session-Id</code> lifecycle and SSE-streamed results) was implemented in <strong>v0.1 Sprint 1</strong>. See <code>Docs/epics/v0.1-exercise-hardening/phase-0/sprint-1-truth-and-transport/sprint.html</code> for the resolution.</p>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../index.html">v0.0-baseline</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 0</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 2: HTTP-Only Hardening</span>
+</nav>
+
+</article>
+
+</body>
+</html>

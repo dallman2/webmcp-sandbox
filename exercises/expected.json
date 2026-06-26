@@ -1,0 +1,11 @@
+{
+  "fixture": {
+    "discoverCountMin": 1,
+    "discoverContains": "hello",
+    "executeResultContains": "Hello, OpenCode"
+  },
+  "host": {
+    "discoverCountMin": 1,
+    "executeResultContains": null
+  }
+}

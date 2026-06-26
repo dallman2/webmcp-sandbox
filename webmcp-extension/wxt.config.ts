@@ -6,7 +6,7 @@ export default defineConfig({
     name: "WebMCP Sandbox Bridge",
     description:
       "Bridges document.modelContext tools exposed by web pages to a local MCP translation server",
-    permissions: ["activeTab", "scripting", "webNavigation"],
+    permissions: ["activeTab", "scripting", "webNavigation", "tabs"],
     host_permissions: ["<all_urls>"],
     manifest_version: 3,
   }),

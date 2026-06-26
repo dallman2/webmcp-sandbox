@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 1: Truth Reconciliation & Canonical Transport — Phase 0 — v0.1-exercise-hardening</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v0.1-exercise-hardening" data-phase="0" data-sprint="1" data-status="completed">
+
+<header>
+  <h1>Sprint 1: Truth Reconciliation &amp; Canonical Transport</h1>
+  <div class="meta">
+    <span>Phase: 0</span>
+    <span>Sprint: 1</span>
+    <span>Depends on: —</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Close the SSE-transport doc-vs-code divergence by replacing the hand-rolled legacy <code>sse_handler</code> and <code>message_handler</code> with <code>rmcp::StreamableHttpService</code> (the canonical transport the v0.0 Sprint 2 docs already claimed), add a <code>tokio::time::timeout</code> to the extension relay to prevent hanging tool calls, investigate and fix the polyfill <code>executeTool</code>-returns-null bug documented in sprint-2-verification §Residual, and reconcile all v0.0 documentation drift.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>v0.0 Sprint 2's docs claim the MCP server uses <code>rmcp::StreamableHttpService</code> and that the hand-rolled <code>message_handler</code> (~110 lines of JSON-RPC string dispatch) was deleted. Reality: <code>mcp-server/src/main.rs:260-382</code> still contains both the legacy <code>sse_handler</code> and <code>message_handler</code>; <code>Cargo.toml</code> enables feature <code>transport-streamable-http-server</code> but it's unused. The hand-rolled transport is not interoperable with real MCP Streamable-HTTP clients (MCP inspector, <code>@modelcontextprotocol/sdk</code>), which would defeat Goal #2 ("prove WebMCP works against localhost:8180"). Meanwhile, the polyfill <code>executeTool</code> returns null for registered tools (sprint-2-verification §Residual), so even the self-smoke fixture can't produce a real execute result. The <code>relay_to_extension</code> oneshot channel has no timeout — if the extension dies mid-call, the MCP request hangs forever. All of these block progress on Sprints 2 and 3.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Verification spike: confirm <code>StreamableHttpService</code> API signature against resolved rmcp 1.x in <code>Cargo.lock</code> (4h timebox)</li>
+      <li>Replace <code>sse_handler</code> (lines 260-271) and <code>message_handler</code> (lines 273-382) with <code>rmcp::transport::streamable_http_server::StreamableHttpService</code> mounted at <code>POST /mcp</code> on the :3000 axum Router</li>
+      <li>Delete legacy <code>/sse</code> + <code>/message</code> routes (lines 403-413) from <code>mcp_app</code> Router; replace with <code>StreamableHttpService</code> route</li>
+      <li>Pin rmcp via committed <code>Cargo.lock</code>; verify <code>transport-streamable-http-server</code> feature is used (already in Cargo.toml:15)</li>
+      <li>Add <code>tokio::time::timeout(Duration::from_secs(30), rx.await)</code> to <code>AppState::relay_to_extension</code> (lines 89-96); on timeout remove pending entry and return timeout error</li>
+      <li>Investigate polyfill <code>executeTool</code> null bug via CDP (port :9222) using sprint-2-verification audit hypothesis (polyfill expects specific return shape or async binding in fixture's <code>execute</code> callback)</li>
+      <li>Fix the null bug: patch the fixture's <code>execute</code> function signature or the calling path in <code>background.ts:callPageTool</code>. If fix is &lt;1 day, ship it. If upstream library issue, document root cause with a patch path for Sprint 2 carry-over.</li>
+      <li>Document single-extension / single-session <code>AppState</code> limitation in this sprint plan</li>
+      <li>Append a forward-pointing <code>&lt;section id="correction"&gt;</code> to v0.0's sprint-2-http-hardening/sprint.html noting the transport claim was aspirational and has been implemented in v0.1 Sprint 1</li>
+      <li>Add missing <code>&lt;section id="recommendations"&gt;</code> to <code>Docs/audits/sprint-2-verification.html</code></li>
+      <li>Fix 17 template placeholder violations in <code>Docs/templates/*.html</code> (EPIC_NAME, broken links, etc.)</li>
+      <li>Fix sprint-1-e2e-bridge/sprint.html reference to nonexistent <code>mcp-server/src/tools.rs</code> → point to <code>mcp-server/src/main.rs</code></li>
+      <li>Fix README stale <code>cargo run -- --transport sse --port 3000</code></li>
+      <li>Scaffold v0.1-exercise-hardening epic/phase/sprint doc tree (this document and its siblings)</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Container / Dockerfile changes</li>
+      <li>Fixture server changes (ServeDir, etc.)</li>
+      <li>Exercise harness</li>
+      <li>Makefile / portability</li>
+      <li>Multi-agent / multi-extension session support</li>
+      <li>Tool-per-file refactor (src/tools/)</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Verify rmcp API (Spike)</h3>
+  <ol>
+    <li data-task-id="1.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 1.1: Resolve rmcp version and confirm StreamableHttpService API</strong>
+        <data data-files="mcp-server/Cargo.lock"></data>
+        <p>Check <code>Cargo.lock</code> for the resolved rmcp 1.x.y version. Read the rmcp source (cargo doc or docs.rs) for <code>StreamableHttpService::new()</code> constructor and <code>StreamableHttpServerConfig</code> signature. Verify it can wrap an existing <code>McpHandler</code> that already has <code>#[tool_router(server_handler)]</code>. If the API is incompatible or unavailable, fall back to Option B (keep legacy transport, file v0.1.1 task, downgrade Goal #2 proof). Timebox: 4 hours. Outcome: confirmed API signature + usage example.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Investigate &amp; Fix Polyfill execute_tool Null Bug</h3>
+  <ol>
+    <li data-task-id="2.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 2.1: Reproduce null bug with CDP inspection</strong>
+        <data data-files="webmcp-extension/src/entrypoints/background.ts fixtures/hello.html"></data>
+        <p>Load the fixture page in Chrome with the extension attached. Via CDP (port :9222), evaluate <code>document.modelContext.getTools()</code> to confirm the <code>hello</code> tool is registered. Call <code>document.modelContext.executeTool({name:"hello"}, JSON.stringify({name:"OpenCode"}))</code>. Observe the return value. Compare against the polyfill's expected return shape (<code>@mcp-b/webmcp-polyfill</code> type definitions). Document the actual vs expected API mismatch. See sprint-2-verification §Residual for the audit's hypothesis: the polyfill may expect the <code>execute</code> callback to receive deserialized args and return a synchronous value, or may require a specific async binding pattern.</p>
+      </div>
+    </li>
+    <li data-task-id="2.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 2.2: Fix the null bug (fixture or calling path)</strong>
+        <data data-files="fixtures/hello.html webmcp-extension/src/entrypoints/background.ts"></data>
+        <p>Based on Task 2.1 findings: (a) if the fixture's <code>execute</code> function signature is wrong, update <code>fixtures/hello.html</code> to match the polyfill's expected contract; (b) if <code>background.ts:callPageTool</code> passes args incorrectly (e.g., double-JSON.stringify), fix the calling path; (c) if the polyfill itself has a bug, document the root cause and create a patch or workaround. Goal: <code>tools/call execute_tool {tool_name:"hello", args:{name:"OpenCode"}}</code> returns <code>{"greeting":"Hello, OpenCode! from WebMCP sandbox"}</code> — not null. If upstream library issue beyond 1-day fix, document with clear patch path and carry to Sprint 2.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Implement Canonical StreamableHttpService Transport</h3>
+  <ol>
+    <li data-task-id="3.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 3.1: Wire StreamableHttpService in place of legacy handlers</strong>
+        <data data-files="mcp-server/src/main.rs mcp-server/Cargo.toml"></data>
+        <p>Import <code>rmcp::transport::streamable_http_server::{StreamableHttpService, StreamableHttpServerConfig}</code>. Create a <code>StreamableHttpService</code> wrapping <code>McpHandler { state: state.clone() }</code>. Mount on the <code>:3000</code> axum Router at <code>/mcp</code> using <code>Router::route_service("/mcp", service)</code>. Delete <code>sse_handler</code> (lines 260-271), <code>message_handler</code> (lines 273-382), and remove the old <code>/sse</code> + <code>/message</code> routes from <code>mcp_app</code> (lines 403-413). The <code>ws_app</code> Router (lines 415-424) and <code>AppState</code> (lines 24-98) are unchanged — they are transport-agnostic. After this, <code>tools/list</code> and <code>tools/call</code> are handled by rmcp's built-in <code>ServerHandler::handle_request</code> — no more raw JSON-RPC string matching.</p>
+      </div>
+    </li>
+    <li data-task-id="3.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 3.2: Pin rmcp version and verify feature flags</strong>
+        <data data-files="mcp-server/Cargo.toml mcp-server/Cargo.lock"></data>
+        <p>Commit <code>Cargo.lock</code> to the repo (ensure it exists and is tracked). Verify <code>transport-streamable-http-server</code> feature is the only transport feature enabled (drop any <code>transport-io</code> or <code>transport-sse-server</code> if present — neither currently exists in Cargo.toml). Pin rmcp to the resolved 1.x.y major.minor.patch to prevent silent API shifts.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. Add Relay Timeout</h3>
+  <ol>
+    <li data-task-id="4.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 4.1: Wrap relay_to_extension oneshot with tokio::time::timeout</strong>
+        <data data-files="mcp-server/src/main.rs"></data>
+        <p>In <code>AppState::relay_to_extension</code> (lines 89-96), replace bare <code>rx.await</code> with <code>tokio::time::timeout(Duration::from_secs(30), rx).await</code>. On <code>Elapsed</code>, remove the pending entry from <code>self.pending</code> and return <code>Err("extension relay timeout (30s)")</code>. Import <code>std::time::Duration</code> (already imported via tokio if using <code>full</code> feature). This prevents hanging MCP requests when the extension disconnects mid-call — a real interop bug.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>5. Doc Reconciliation</h3>
+  <ol>
+    <li data-task-id="5.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 5.1: Append correction note to v0.0 Sprint 2 plan</strong>
+        <data data-files="Docs/epics/v0.0-baseline/phase-0/sprint-2-http-hardening/sprint.html"></data>
+        <p>Add a <code>&lt;section id="correction"&gt;</code> near the end of the sprint plan (before the breadcrumb) declaring: "Sprint 2's claim that the server uses <code>rmcp::StreamableHttpService</code> was aspirational at the time of writing. The actual transport shipped in v0.0 was a hand-rolled legacy SSE handler (<code>/sse</code> + <code>/message</code> POST). The canonical <code>StreamableHttpService</code> was implemented in v0.1 Sprint 1. See <code>Docs/epics/v0.1-exercise-hardening/phase-0/sprint-1-truth-and-transport/sprint.html</code>." Do NOT rewrite the original prose — preserve the audit trail.</p>
+      </div>
+    </li>
+    <li data-task-id="5.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 5.2: Add missing #recommendations section to sprint-2 audit</strong>
+        <data data-files="Docs/audits/sprint-2-verification.html"></data>
+        <p>Add <code>&lt;section id="recommendations"&gt;</code> with concrete next steps: (1) implement StreamableHttpService in v0.1, (2) investigate polyfill executeTool null via CDP, (3) add relay timeout. Match the format used in <code>Docs/audits/e2e-bridge-verification.html</code>.</p>
+      </div>
+    </li>
+    <li data-task-id="5.3">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 5.3: Fix template placeholder violations</strong>
+        <data data-files="Docs/templates/"></data>
+        <p>Fix the 17 <code>validate-docs.mjs</code> violations in <code>Docs/templates/*.html</code>: replace <code>EPIC_NAME</code> placeholder with <code>v0.0-baseline</code>, fix broken relative links (<code>phase-0/</code> → <code>../phase-0/</code>), and correct breadcrumb paths. These are template files used for future scaffolding and should be clean before Sprint 2/3 scaffold from them.</p>
+      </div>
+    </li>
+    <li data-task-id="5.4">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 5.4: Fix stale doc references (tools.rs, --transport)</strong>
+        <data data-files="Docs/epics/v0.0-baseline/phase-0/sprint-1-e2e-bridge/sprint.html README.md"></data>
+        <p>Update <code>sprint-1-e2e-bridge/sprint.html</code>: change <code>data-files="mcp-server/src/tools.rs"</code> in tasks 1.2 and 3.1 to <code>data-files="mcp-server/src/main.rs"</code> and update prose to note tools live in <code>main.rs</code> (currently 2 tools — below AGENTS.md "&gt;3 tools" threshold for src/tools/ split). Update <code>README.md</code>: remove the stale <code>cargo run -- --transport sse --port 3000</code> line (the --transport flag was already removed from main.rs in Sprint 2). Replace with <code>cargo run</code>.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>6. Verify &amp; Validate</h3>
+  <ol>
+    <li data-task-id="6.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 6.1: Run all verification gates</strong>
+        <data data-files="mcp-server/src/main.rs mcp-server/Cargo.toml"></data>
+        <p>Gates: (1) <code>cargo fmt --check</code> clean, (2) <code>cargo clippy -D warnings</code> clean, (3) <code>cargo build --release</code> clean, (4) <code>npx @modelcontextprotocol/inspector</code> connects to <code>http://localhost:3000/mcp</code>, returns <code>Mcp-Session-Id</code> on initialize, (5) <code>tools/list</code> returns discover_tools + execute_tool with schemars schemas, (6) with extension connected: <code>tools/call discover_tools</code> returns fixture's hello tool, (7) <code>tools/call execute_tool {tool_name:"hello", args:{name:"OpenCode"}}</code> returns a real result (not null — the blocker gate), (8) kill extension mid-call: relay returns timeout error within ~30s, (9) <code>validate-docs.mjs</code> zero violations, (10) <code>check-doc-drift.mjs</code> zero drifts. All gates must pass before Sprint 1 is marked complete.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>MCP transport</td><td>rmcp StreamableHttpService (feature transport-streamable-http-server)</td></tr>
+      <tr><td>Tool definitions</td><td>#[tool_router(server_handler)] + Parameters&lt;T&gt; (already in place)</td></tr>
+      <tr><td>Relay timeout</td><td>tokio::time::timeout + Duration</td></tr>
+      <tr><td>Bug investigation</td><td>Chrome CDP (:9222) + document.modelContext API inspection</td></tr>
+      <tr><td>Doc validation</td><td>Spiderweb validate-docs.mjs + check-doc-drift.mjs</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox">
+      <span>cargo fmt --check passes clean</span>
+      <code>cd mcp-server &amp;&amp; cargo fmt --check</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>cargo clippy -D warnings passes clean</span>
+      <code>cd mcp-server &amp;&amp; cargo clippy --all-targets -- -D warnings</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>cargo build --release succeeds</span>
+      <code>cd mcp-server &amp;&amp; cargo build --release</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>MCP inspector connects via Streamable HTTP (Mcp-Session-Id in initialize response)</span>
+      <code>npx @modelcontextprotocol/inspector</code> → connect to http://localhost:3000/mcp
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>tools/list returns 2 server tools with schemars schemas</span>
+      <code>curl -sX POST :3000/mcp -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>tools/call discover_tools returns fixture's registered tools (with extension connected)</span>
+      <code>Manual: extension loaded in Chrome with fixture page open</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>tools/call execute_tool returns real result (not null) — the polyfill blocker gate</span>
+      <code>Execute hello tool: result contains "Hello, OpenCode! from WebMCP sandbox"</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Relay timeout: killed extension mid-call → error returned within ~30s (no hang)</span>
+      <code>Kill extension process while tools/call is in-flight; observe timeout response</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>validate-docs.mjs → 0 violations</span>
+      <code>node Docs/scripts/validate-docs.mjs --verbose</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>check-doc-drift.mjs → 0 drifts</span>
+      <code>node Docs/scripts/check-doc-drift.mjs --repo-root .</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>No stdout pollution during MCP traffic (stderr-only logging preserved)</span>
+      <code>Run server, send MCP requests, verify stdout is empty</code>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../index.html">v0.1-exercise-hardening</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 0</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 1: Truth Reconciliation &amp; Canonical Transport</span>
+</nav>
+
+</article>
+
+</body>
+</html>

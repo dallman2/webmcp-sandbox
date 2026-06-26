@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 2: Container Correctness & Host Reachability — Phase 0 — v0.1-exercise-hardening</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v0.1-exercise-hardening" data-phase="0" data-sprint="2" data-status="completed">
+
+<header>
+  <h1>Sprint 2: Container Correctness &amp; Host Reachability</h1>
+  <div class="meta">
+    <span>Phase: 0</span>
+    <span>Sprint: 2</span>
+    <span>Depends on: Sprint 1</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Make <code>docker build &amp;&amp; docker run</code> actually start a working sandbox: serve the fixture page correctly, reach a host-side <code>localhost:8180</code> WebMCP site cross-platform (macOS and Linux), make the extension target the right tab by URL/origin, and introduce runtime configuration (<code>/sandbox-config</code> endpoint) to replace hardcoded wiring.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>The Docker container has four runtime failures: (1) <code>docker/Dockerfile</code> never copies <code>fixtures/</code> into the image, so <code>start.sh</code>'s <code>python3 -m http.server --directory /fixtures</code> serves nothing; (2) <code>python3</code> is not explicitly installed; (3) the Chromium launch URL is hardcoded to <code>localhost:8080/hello.html</code> with no mechanism to target a different site; (4) container <code>localhost</code> ≠ host <code>localhost</code> on macOS (Docker VM), so the user's <code>localhost:8180</code> is unreachable. Additionally, the extension has hardcoded <code>ws://127.0.0.1:8765</code> in <code>background.ts:4</code> and uses naive <code>chrome.tabs.query({}) → tabs[0]</code> for tab selection at lines 44 and 74 — so it hits the first tab regardless of whether that tab has WebMCP tools.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Serve fixtures from the Rust MCP server via <code>tower-http::services::ServeDir</code> at <code>GET /fixtures/*</code> on :3000 — drop <code>python3 -m http.server</code> entirely</li>
+      <li>Copy <code>fixtures/</code> into the Docker runtime image</li>
+      <li>Add <code>GET /sandbox-config</code> endpoint returning <code>{"wsUrl","targetUrl","targetOrigin"}</code> for runtime configuration of the extension</li>
+      <li>Replace hardcoded <code>WS_URL</code> in <code>background.ts:4</code> with <code>/sandbox-config</code> fetch (with literal fallback)</li>
+      <li>Replace <code>tabs[0]</code> tab selection with URL/origin-filtered <code>chrome.tabs.query({url})</code> with fallback chain</li>
+      <li>Add <code>page_ready</code> message from <code>content.ts</code> to background SW for tab registration</li>
+      <li>Parameterize Chromium launch URL via <code>SANDBOX_TARGET_URL</code> env var (default: fixture self-test)</li>
+      <li>Implement host-reachability via <code>SANDBOX_TARGET_HOST</code> env var with localhost/127.0.0.1 → host.docker.internal rewriting</li>
+      <li>Add health-readiness gate before Chromium launches (poll <code>/sandbox-config</code>)</li>
+      <li>Replace bare <code>wait</code> with <code>trap 'kill 0'</code> and background PID tracking in <code>start.sh</code></li>
+      <li>Document cross-platform networking: macOS <code>--add-host=host.docker.internal:host-gateway</code> vs Linux <code>--network=host</code></li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Exercise harness / smoke scripts</li>
+      <li>Makefile / docker-compose / GHCR</li>
+      <li>Multi-session AppState</li>
+      <li>Additional tools beyond discover_tools / execute_tool</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Fixture Serving (Rust ServeDir)</h3>
+  <ol>
+    <li data-task-id="1.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 1.1: Add tower-http ServeDir for fixture serving</strong>
+        <data data-files="mcp-server/Cargo.toml mcp-server/src/main.rs"></data>
+        <p>Add <code>tower-http = { version = "0.4", features = ["fs"] }</code> to <code>Cargo.toml</code> dependencies. In <code>main.rs</code>, add <code>.nest_service("/fixtures", ServeDir::new("./fixtures"))</code> to the :3000 axum Router (alongside the existing StreamableHttpService and WS routes). Drop <code>python3 -m http.server 8080 --directory /fixtures</code> from <code>docker/start.sh</code> entirely.</p>
+      </div>
+    </li>
+    <li data-task-id="1.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 1.2: Copy fixtures/ into Docker image</strong>
+        <data data-files="docker/Dockerfile"></data>
+        <p>Add <code>COPY fixtures/ ./fixtures/</code> to the runtime stage of <code>docker/Dockerfile</code> (after the server/extension COPY lines). <code>.dockerignore</code> does not exclude fixtures/ — no change needed there. Verify the Rust server's working directory is <code>/app</code> where <code>./fixtures</code> resolves correctly.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Runtime Configuration Endpoint</h3>
+  <ol>
+    <li data-task-id="2.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 2.1: Add GET /sandbox-config endpoint</strong>
+        <data data-files="mcp-server/src/main.rs"></data>
+        <p>Add a new axum route <code>.route("/sandbox-config", get(sandbox_config_handler))</code> to the :3000 Router returning JSON: <code>{"wsUrl":"ws://127.0.0.1:8765","targetUrl":"<env SANDBOX_TARGET_URL="">","targetOrigin":"<derived origin="">"}</derived></env></code>. Read <code>SANDBOX_TARGET_URL</code> from env (default <code>http://localhost:3000/fixtures/hello.html</code>). Derive targetOrigin from the URL. Serve as <code>application/json</code>.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Extension Runtime Wiring</h3>
+  <ol>
+    <li data-task-id="3.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 3.1: Fetch WS URL and target origin from /sandbox-config</strong>
+        <data data-files="webmcp-extension/src/entrypoints/background.ts"></data>
+        <p>Replace hardcoded <code>const WS_URL = "ws://127.0.0.1:8765"</code> (line 4) with a startup <code>fetch("http://127.0.0.1:3000/sandbox-config")</code> → parse <code>{wsUrl, targetOrigin}</code>. Store as module-level mutable state. Fall back to the literal constant if fetch fails (MV3 service worker may suspend before fetch completes). Use the wsUrl from config for the WebSocket connection.</p>
+      </div>
+    </li>
+    <li data-task-id="3.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 3.2: Replace tabs[0] with URL/origin-filtered tab selection</strong>
+        <data data-files="webmcp-extension/src/entrypoints/background.ts"></data>
+        <p>In both the <code>call_tool</code> handler (line 44) and <code>discover_tools</code> handler (line 74), replace <code>const tab = tabs[0]</code> with URL-filtered selection: <code>chrome.tabs.query({url: targetOrigin + "/*"})</code>; if empty, filter all <code>{url: ["http://*/*", "https://*/*"]}</code> tabs by <code>new URL(tab.url).origin === targetOrigin</code>; fallback chain: url-matched → origin-matched → active → first tab. If no tab matches, send a structured error back over WS: <code>{"type":"tool_error","id":msg.id,"error":"no tab matching target origin <x>"}</x></code>.</p>
+      </div>
+    </li>
+    <li data-task-id="3.3">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 3.3: Send page_ready message from content script</strong>
+        <data data-files="webmcp-extension/src/entrypoints/content.ts"></data>
+        <p>After polyfill initialization in <code>content.ts</code>, send a <code>chrome.runtime.sendMessage({type:"page_ready", url: window.location.href})</code> to the background service worker. The background SW stores this as the live target tab URL, complementing the url-filter approach.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. start.sh Hardening</h3>
+  <ol>
+    <li data-task-id="4.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 4.1: Parameterize Chromium launch URL and add host rewriting</strong>
+        <data data-files="docker/start.sh"></data>
+        <p>Add env var reads at top of <code>start.sh</code>: <code>SANDBOX_TARGET_URL="${SANDBOX_TARGET_URL:-http://localhost:3000/fixtures/hello.html}"</code>, <code>SANDBOX_TARGET_HOST="${SANDBOX_TARGET_HOST:-}"</code>. If <code>SANDBOX_TARGET_HOST</code> is set and <code>SANDBOX_TARGET_URL</code> contains <code>localhost</code> or <code>127.0.0.1</code>, rewrite to the target host via Bash parameter expansion. Pass <code>$SANDBOX_TARGET_URL</code> as Chromium's opening URL (replacing hardcoded <code>http://localhost:8080/hello.html</code> on line 26).</p>
+      </div>
+    </li>
+    <li data-task-id="4.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 4.2: Add health-readiness gate before Chromium launch</strong>
+        <data data-files="docker/start.sh"></data>
+        <p>Replace <code>sleep 2</code> with an active readiness loop: <code>until curl -sf http://127.0.0.1:3000/sandbox-config &gt;/dev/null 2&gt;&amp;1; do sleep 0.5; done</code> (timeout ~30s). Only launch Chromium after the MCP server responds. Log "server ready" on success, fail loudly on timeout.</p>
+      </div>
+    </li>
+    <li data-task-id="4.3">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 4.3: Robust background process handling</strong>
+        <data data-files="docker/start.sh"></data>
+        <p>Replace bare <code>&amp;</code> + <code>wait</code> with: <code>trap 'kill 0' EXIT INT TERM</code> at the top (after <code>set -e</code>), track PIDs explicitly (<code>PID_XVFB=$!</code>), and <code>wait -n</code> or individual <code>wait</code> per process. On any child exit, the trap kills the process group. Remove <code>python3 -m http.server</code> entirely (replaced by ServeDir in Task 1.1).</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>5. Verify &amp; Validate</h3>
+  <ol>
+    <li data-task-id="5.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 5.1: Run all container verification gates</strong>
+        <data data-files="docker/Dockerfile docker/start.sh webmcp-extension/src/entrypoints/background.ts"></data>
+        <p>Gates: (1) <code>docker build</code> succeeds with no python3 in apt list, (2) <code>docker run</code> boots: <code>curl :3000/sandbox-config</code> returns JSON, <code>curl :3000/fixtures/hello.html</code> returns fixture, (3) VNC (:5900) shows Chromium on fixture with "Tool hello registered" status, (4) macOS: <code>--add-host=host.docker.internal:host-gateway -e SANDBOX_TARGET_HOST=host.docker.internal -e SANDBOX_TARGET_URL=http://localhost:8180/</code> reaches host :8180, (5) Linux: <code>--network=host -e SANDBOX_TARGET_URL=http://localhost:8180/</code> reaches host :8180, (6) <code>kill</code> container → all PIDs die (no orphans), (7) extension reconnects on WS drop (existing setTimeout(connect,2000) + new /sandbox-config fallback).</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>Fixture serving</td><td>tower-http::services::ServeDir (axum integration)</td></tr>
+      <tr><td>Runtime config</td><td>GET /sandbox-config (JSON endpoint on :3000)</td></tr>
+      <tr><td>Tab targeting</td><td>chrome.tabs.query({url}) + origin filtering + page_ready message</td></tr>
+      <tr><td>Host networking (macOS)</td><td>--add-host=host.docker.internal:host-gateway + SANDBOX_TARGET_HOST rewrite</td></tr>
+      <tr><td>Host networking (Linux)</td><td>--network=host</td></tr>
+      <tr><td>Process supervision</td><td>trap 'kill 0' EXIT INT TERM</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox">
+      <span>docker build succeeds; no python3 in apt list; COPY fixtures/ present</span>
+      <code>docker build -f docker/Dockerfile -t webmcp-sandbox .</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Container boots: /sandbox-config returns JSON; /fixtures/hello.html serves fixture</span>
+      <code>docker run -e SANDBOX_TARGET_URL=http://localhost:3000/fixtures/hello.html -p 3000:3000 -p 5900:5900 webmcp-sandbox</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>VNC shows Chromium on fixture page with "Tool hello registered"</span>
+      <code>Connect VNC client to localhost:5900</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>macOS: container reaches host :8180 via host.docker.internal</span>
+      <code>docker run --add-host=host.docker.internal:host-gateway -e SANDBOX_TARGET_HOST=host.docker.internal -e SANDBOX_TARGET_URL=http://localhost:8180/ -p 3000:3000 -p 5900:5900 webmcp-sandbox</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Linux: container reaches host :8180 via --network=host</span>
+      <code>docker run --network=host -e SANDBOX_TARGET_URL=http://localhost:8180/ webmcp-sandbox</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Background processes terminate cleanly on container kill (no orphans)</span>
+      <code>docker kill <cid> &amp;&amp; docker ps -a | grep <cid></cid></cid></code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Extension selects tab matching target URL origin (not always tabs[0])</span>
+      <code>Open fixture + separate target tab; verify tools/call hits target tab</code>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../index.html">v0.1-exercise-hardening</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 0</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 2: Container Correctness &amp; Host Reachability</span>
+</nav>
+
+</article>
+
+</body>
+</html>

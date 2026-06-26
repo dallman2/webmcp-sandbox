@@ -5,12 +5,15 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-axum = { version = "0", features = ["json"] }
+axum = { version = "0", features = ["json", "ws"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
-clap = { version = "4", features = ["derive"] }
-futures-core = "0.3"
 futures-util = "0.3"
+rmcp = { version = "1", features = ["transport-streamable-http-server", "server", "macros"] }
+schemars = "1"
+uuid = { version = "1", features = ["v4"] }
+tokio-stream = "0.1"
+tower-http = { version = "0", features = ["fs"] }

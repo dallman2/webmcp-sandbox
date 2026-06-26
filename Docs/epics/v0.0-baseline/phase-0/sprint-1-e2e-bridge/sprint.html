@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 1: End-to-End Bridge — Phase 0 — v0.0-baseline</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v0.0-baseline" data-phase="0" data-sprint="1" data-status="completed">
+
+<header>
+  <h1>Sprint 1: End-to-End Bridge</h1>
+  <div class="meta">
+    <span>Phase: 0</span>
+    <span>Sprint: 1</span>
+    <span>Depends on: Sprint 0</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Promote the scaffold to a functional minimal baseline: replace the stub Rust server with an <code>rmcp</code>-backed SSE server on <code>:3000</code>, add the missing <code>:8765</code> WebSocket relay to the browser extension, expose typed <code>#[rmcp::tool]</code> definitions whose JSON schemas are derived via <code>schemars</code>, wire full structured logging, and prove the discover→call→respond loop with an end-to-end Docker smoke test against a fixed <code>fixtures/</code> page using only <code>document.modelContext</code> — never raw JavaScript.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>Sprint 0 confirmed the repo boots but cannot function: the extension's <code>background.ts</code> tries <code>ws://127.0.0.1:8765</code> and gets ECONNREFUSED; the SSE endpoint emits one hard-coded event; no <code>rmcp</code> dependency exists; no tool definitions; no <code>schemars</code> schema derivation; the <code>--transport</code> arg is parsed but unused; and structured logging fields (<code>correlation_id</code>/<code>tool_name</code>/<code>ws_session_id</code>) mandated by <code>AGENTS.md</code> are absent. Two additional critical blockers were discovered during Sprint 0 execution: (a) Chromium crashes on boot because the Ubuntu 22.04 <code>chromium-browser</code> package is a snap wrapper with no snapd available — CDP :9222 never opens and the extension never loads; (b) <code>rustfmt</code> and <code>clippy</code> are not installed in the rust-builder Docker stage, so lint audits cannot run. This sprint also captures the orphaned Sprint 0 mandate <code>DESIGN.md</code> and the epic-overview phase-structure table drift. All architectural choices are already made — the polyfill, the wire envelopes, the extension side all exist. This sprint is pure server-side realization plus Docker toolchain fixes plus a verification fixture; it deliberately reuses <code>axum</code>'s <code>ws</code> feature rather than adding <code>tokio-tungstenite</code>, and pins the wire protocol to match <code>background.ts</code> exactly (<code>call_tool</code>/<code>discover_tools</code>/<code>tool_result</code>/<code>tool_error</code>/<code>discover_result</code>).</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Fix the Docker runtime Chromium crash: replace the Ubuntu 22.04 snap-wrapped <code>chromium-browser</code> with a real Chromium binary (Google direct download or switch to Debian bookworm base) — <strong>this gates all E2E testing</strong></li>
+      <li>Install <code>rustfmt</code> and <code>clippy</code> in the rust-builder Docker stage so lint audits actually run</li>
+      <li>Add <code>rmcp</code> (features <code>server</code>, <code>transport-io</code>, <code>transport-sse-server</code>) and <code>schemars</code> to <code>mcp-server/Cargo.toml</code></li>
+      <li>Create <code>mcp-server/src/tools.rs</code> with <code>#[rmcp::tool]</code> definitions; derive JSON schemas via <code>schemars</code></li>
+      <li>Replace the stub <code>axum</code> SSE handler with <code>rmcp</code> SSE server on <code>:3000</code></li>
+      <li>Add <code>:8765</code> WebSocket listener reusing axum's <code>ws</code> feature (no new WS crate)</li>
+      <li>Forward <code>call_tool</code>/<code>discover_tools</code> envelopes to the extension, correlate by <code>id</code>, republish <code>tool_result</code>/<code>tool_error</code>/<code>discover_result</code> back to the SSE client</li>
+      <li>Add <code>correlation_id</code>, <code>tool_name</code>, <code>ws_session_id</code> as <code>tracing</code> fields on every tool-call log event (stderr-only, already correct)</li>
+      <li>Smoke test asserting zero bytes on stdout during MCP traffic (the stream-corruption guard)</li>
+      <li>Add <code>fixtures/hello.html</code> registering a tool via <code>@mcp-b/webmcp-polyfill</code> (kept out of the Docker runtime stage)</li>
+      <li>Rebuild the image and run an end-to-end smoke of the discover→call→respond loop</li>
+      <li>Implement the <code>--transport stdio</code> path (<code>transport-io</code> feature is currently parsed-but-unused)</li>
+      <li>Bring <code>mcp-server/README.md</code> back in line with reality (the <code>src/tools.rs</code> claim becomes truthful); fold into the drift fix from Sprint 0 task 1.3</li>
+      <li>Create <code>DESIGN.md</code> design tokens per <code>AGENTS.md:160</code> (a Sprint 0 mandate that was not captured)</li>
+      <li>Sync <code>epic-overview.html</code> phase-structure table to include Sprint 1; flip epic acceptance checkboxes satisfied by Sprint 0</li>
+      <li>Produce <code>Docs/audits/e2e-bridge-verification.html</code> capturing the E2E smoke results; regenerate indices and validate</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Extension-side restructuring — <code>background.ts</code>/<code>content.ts</code> already conform to the Golden Rule; only server-side wiring changes</li>
+      <li>Vitest/extension unit tests — deferred to a later sprint; this sprint proves the contract with an E2E smoke instead</li>
+      <li>CI pipeline/CD — manual Docker rebuild + smoke is the verification surface for now</li>
+      <li>Broad tool catalog beyond the minimal discover/execute relay — additional tools are future epic material</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Rust MCP Core</h3>
+  <ol>
+    <li data-task-id="1.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 1.1: Add rmcp and schemars Cargo dependencies</strong>
+        <data data-files="mcp-server/Cargo.toml"></data>
+        <p>Add <code>rmcp = { features = ["server","transport-io","transport-sse-server"] }</code> and <code>schemars</code> to <code>mcp-server/Cargo.toml</code> per <code>AGENTS.md</code> mandates. No hand-written tool schemas — <code>schemars</code> derivation is the only path.</p>
+      </div>
+    </li>
+    <li data-task-id="1.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 1.2: Create src/tools.rs with #[rmcp::tool] definitions</strong>
+        <data data-files="mcp-server/src/main.rs"></data>
+        <p>Define typed tools in <code>mcp-server/src/main.rs</code> using the <code>McpHandler</code> impl block — at minimum <code>discover_tools</code> and <code>execute_tool</code> (the relay shell) — annotated with <code>#[rmcp::tool]</code> so <code>rmcp</code> auto-generates JSON schemas from the structs via <code>schemars</code>. Never hand-write schemas. Note: tools live in <code>main.rs</code> because only 2 tools exist; AGENTS.md mandates <code>src/tools/</code> once &gt;3 tools.</p>
+      </div>
+    </li>
+    <li data-task-id="1.3">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 1.3: Replace stub SSE handler with rmcp SSE server on :3000</strong>
+        <data data-files="mcp-server/src/main.rs"></data>
+        <p>Remove the one-shot <code>stream::iter</code> SSE stub (<code>mcp-server/src/main.rs</code>) and wire the <code>rmcp</code> SSE transport on <code>:3000</code>. The agent-facing surface now serves the MCP protocol rather than a hard-coded <code>notifications/initialized</code> event.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. WebSocket Relay</h3>
+  <ol>
+    <li data-task-id="2.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 2.1: Add :8765 WS listener reusing axum ws feature</strong>
+        <data data-files="mcp-server/Cargo.toml mcp-server/src/main.rs"></data>
+        <p>Enable axum's <code>ws</code> feature and add a second router binding on <code>0.0.0.0:8765</code> accepting upgrade requests. No new WS crate (<code>tokio-tungstenite</code> explicitly rejected). This closes the gap Sprint 0 task 1.2 documented.</p>
+      </div>
+    </li>
+    <li data-task-id="2.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 2.2: Forward and correlate tool envelopes to the extension</strong>
+        <data data-files="mcp-server/src/main.rs webmcp-extension/src/entrypoints/background.ts"></data>
+        <p>Implement the relay: on inbound agent tool call, forward a <code>{type:"call_tool"|"discover_tools", id, ...}</code> envelope over the extension's WS; on inbound <code>{type:"tool_result"|"tool_error"|"discover_result", id, ...}</code>, correlate by <code>id</code> and republish to the SSE client awaiting that call. Wire protocol matches <code>background.ts:16-70</code> exactly — no protocol drift introduced on either side.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Structured Logging</h3>
+  <ol>
+    <li data-task-id="3.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 3.1: Add correlation_id / tool_name / ws_session_id tracing fields</strong>
+        <data data-files="mcp-server/src/main.rs"></data>
+        <p>Per the <code>AGENTS.md</code> observability mandate, add <code>correlation_id</code> (= JSON-RPC request id), <code>tool_name</code>, and <code>ws_session_id</code> as <code>tracing</code> span/fields on every log event that touches a tool call. Stderr-only output is already correct (<code>mcp-server/src/main.rs</code>); verify no <code>println!</code> regressions are introduced.</p>
+      </div>
+    </li>
+    <li data-task-id="3.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 3.2: Stdout-clean smoke test (stream-corruption guard)</strong>
+        <data data-files="mcp-server/src/main.rs"></data>
+        <p>Add a verifiable check that during MCP traffic the process writes nothing to stdout (the mandated guard against corrupting the JSON-RPC stream, especially under the stdio transport). Capture stdout of a tool-call burst; assert empty.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. Docker Toolchain Fixes &amp; E2E Verify</h3>
+  <ol>
+    <li data-task-id="4.0">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 4.0: Fix Chromium runtime — replace snap-wrapped chromium-browser</strong>
+        <data data-files="docker/Dockerfile"></data>
+        <p><strong>Gates all E2E testing.</strong> Sprint 0's #1 critical finding: Ubuntu 22.04 <code>chromium-browser</code> package is a snap wrapper shim; snap is not available in the Docker container; Chromium exits immediately on boot. Fix by replacing the runtime base image (switch to Debian bookworm which has a real <code>chromium</code> package) or downloading a direct Chromium <code>.deb</code> from Google. After this task, <code>docker exec &lt;ctr&gt; curl http://127.0.0.1:9222/json/version</code> must return a valid DevTools response. All group-4 tasks depend on this.</p>
+      </div>
+    </li>
+    <li data-task-id="4.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 4.1: Add fixtures/hello.html (polyfill-registering test page)</strong>
+        <data data-files="fixtures/hello.html"></data>
+        <p>Create <code>fixtures/hello.html</code> that loads <code>@mcp-b/webmcp-polyfill</code> and calls <code>document.modelContext.registerTool()</code> with a minimal no-op tool. Kept out of the Docker runtime stage so the production image is unchanged; served inside the container via a one-line static server only during the smoke test.</p>
+      </div>
+    </li>
+    <li data-task-id="4.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 4.2: Rebuild image and run end-to-end smoke loop</strong>
+        <data data-files="docker/Dockerfile docker/start.sh"></data>
+        <p>Prerequisite: task 4.0 (Chromium must boot). Rebuild <code>docker build -f docker/Dockerfile -t webmcp-sandbox:latest .</code>, run it mounting the fixture, and exercise the full loop: agent→SSE:3000→rmcp→WS:8765→extension→<code>document.modelContext.executeTool()</code>→page tool→back. Confirm the typed JSON payload makes a complete round trip with a schema-validated result.</p>
+      </div>
+    </li>
+    <li data-task-id="4.3">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 4.3: Assert all mandates in the E2E smoke</strong>
+        <data data-files="mcp-server/src/main.rs webmcp-extension/src/entrypoints/background.ts"></data>
+        <p>The smoke must assert: no stdout pollution (task 3.2); every tool-call log line carries <code>correlation_id</code>/<code>tool_name</code>/<code>ws_session_id</code>; tool inputs are schema-validated through <code>schemars</code>-derived schemas; no <code>eval()</code>/<code>page.evaluate()</code> anywhere in the relay path — only <code>document.modelContext.executeTool()</code>/<code>.getTools()</code>.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>5. Hardening</h3>
+  <ol>
+    <li data-task-id="5.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 5.1: Implement --transport stdio path</strong>
+        <data data-files="mcp-server/src/main.rs"></data>
+        <p>The <code>--transport</code> clap arg is parsed but unused. Implement the stdio branch using the <code>transport-io</code> rmcp feature so agents can connect over stdio as well as SSE. This is what makes the stdout-clean mandate (task 3.2) load-bearing rather than cosmetic.</p>
+      </div>
+    </li>
+    <li data-task-id="5.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 5.2: Fix README/AGENTS code drift (tools.rs truthfulness)</strong>
+        <data data-files="mcp-server/README.md"></data>
+        <p>Update <code>mcp-server/README.md</code> so its description of <code>src/tools.rs</code> and the tool surface matches what task 1.2 actually created. Closes the drift flagged in Sprint 0 task 1.3 — after this, <code>mcp-server/README.md:15</code> is no longer fictional.</p>
+      </div>
+    </li>
+    <li data-task-id="5.3">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 5.3: Install rustfmt + clippy in rust-builder Docker stage</strong>
+        <data data-files="docker/Dockerfile"></data>
+        <p>Sprint 0 task 3.1 found that <code>cargo fmt --check</code> and <code>cargo clippy</code> both error out because the Rust toolchain in the <code>rust:1-bookworm</code> builder image lacks these components. Add <code>rustup component add rustfmt clippy</code> to the rust-builder stage so future lint audits actually execute.</p>
+      </div>
+    </li>
+    <li data-task-id="5.4">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 5.4: Sync epic-overview.html phase-structure table and acceptance checkboxes</strong>
+        <data data-files="Docs/epics/v0.0-baseline/epic-overview.html"></data>
+        <p>The epic overview's phase-structure table still shows only Sprint 0 (rowspan=1, status "Planned") — Sprint 1 is not listed. Manually add the Sprint 1 row. Also flip the acceptance checkboxes that Sprint 0 satisfied: "Architecture doc exists", "Audit doc exists", "Sprint 0 tasks populated".</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>6. Doc Closure</h3>
+  <ol>
+    <li data-task-id="6.1">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 6.1: Produce e2e-bridge-verification audit doc</strong>
+        <data data-files="Docs/audits/e2e-bridge-verification.html"></data>
+        <p>Create <code>Docs/audits/e2e-bridge-verification.html</code> from <code>Docs/templates/audit.html</code> capturing Sprint 1's E2E smoke results: the round-trip payload trace, the mandate-assertion outcomes from task 4.3, and any residual gaps. Separate from <code>baseline-quality.html</code> to keep the pre-implementation baseline and post-implementation verification chronologically distinct.</p>
+      </div>
+    </li>
+    <li data-task-id="6.2">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 6.2: Regenerate indices and validate docs</strong>
+        <data data-files="Docs/"></data>
+        <p>Run the post-mutation pipeline to refresh navigation and confirm schema conformance across the doc tree: <code>node Docs/scripts/populate-data-files.mjs --epic v0.0-baseline</code>, <code>node Docs/scripts/generate-index.mjs</code>, <code>node Docs/scripts/validate-docs.mjs --verbose</code>. Fix any violations until clean; flip task checkboxes as work lands via <code>mark-tasks-complete.mjs</code>.</p>
+      </div>
+    </li>
+    <li data-task-id="6.3">
+      <input checked type="checkbox">
+      <div>
+        <strong>Task 6.3: Create DESIGN.md design tokens</strong>
+        <data data-files="DESIGN.md"></data>
+        <p><code>AGENTS.md:160</code> lists <code>DESIGN.md</code> as a reference file "(needs creation in Sprint 0)" but no Sprint 0 task captured it. Create the file with design tokens relevant to webmcp-sandbox: color palette, typography, spacing scale. Resolves the remaining AGENTS.md drift from Sprint 0.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>MCP server</td><td>rmcp (server, transport-io, transport-sse-server) + axum ws feature (no tokio-tungstenite)</td></tr>
+      <tr><td>JSON schema</td><td>schemars (derived from #[rmcp::tool] structs — never hand-written)</td></tr>
+      <tr><td>Logging</td><td>tracing + tracing-subscriber to stderr; structured fields correlation_id/tool_name/ws_session_id</td></tr>
+      <tr><td>Transport</td><td>SSE :3000 (rmcp) + stdio (rmcp transport-io) + WS :8765 (axum ws)</td></tr>
+      <tr><td>Browser side</td><td>@mcp-b/webmcp-polyfill, document.modelContext only — no eval/page.evaluate</td></tr>
+      <tr><td>E2E fixture</td><td>fixtures/hello.html (kept out of runtime Docker stage)</td></tr>
+      <tr><td>Verification surface</td><td>Docker rebuild + E2E smoke asserting all mandates; Docs/audits/e2e-bridge-verification.html</td></tr>
+      <tr><td>Docker runtime</td><td>Debian bookworm base (replaces Ubuntu 22.04 snap-wrapped chromium)</td></tr>
+      <tr><td>Builder hardening</td><td>rustfmt + clippy installed in rust-builder stage</td></tr>
+      <tr><td>Design tokens</td><td>DESIGN.md (color palette, typography, spacing)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox">
+      <span>Rust server builds with rmcp + schemars features</span>
+      <code>docker build --target rust-builder -f docker/Dockerfile .</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Server binds both :3000 SSE and :8765 WS in the running image</span>
+      <code>docker exec &lt;ctr&gt; sh -c 'curl -s http://127.0.0.1:8765'</code> (now responds, not ECONNREFUSED)
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>E2E smoke loop completes: discover → execute → result round-trip</span>
+      <code>fixtures/hello.html + curl SSE tool call</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>No stdout output during MCP traffic (stream-corruption guard)</span>
+      <code>stdout-capture assertion in task 4.3 smoke</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Every tool-call log line carries correlation_id/tool_name/ws_session_id</span>
+      <code>docker logs &lt;ctr&gt; 2&gt;&amp;1 | grep structured-fields</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Docs validate with zero violations after E2E audit doc added</span>
+      <code>node Docs/scripts/validate-docs.mjs --verbose</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>mcp-server/README.md drift resolved (tools.rs description truthful)</span>
+      <code>grep -n tools.rs mcp-server/README.md</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Chromium boots and CDP :9222 responds in rebuilt image</span>
+      <code>docker exec &lt;ctr&gt; wget -q -O- http://127.0.0.1:9222/json/version</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>cargo fmt --check and cargo clippy execute in rust-builder stage</span>
+      <code>docker run --rm &lt;builder-img&gt; sh -c 'cargo fmt --check &amp;&amp; cargo clippy --all-targets -- -D warnings'</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>DESIGN.md created with design tokens</span>
+      <code>ls DESIGN.md</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>epic-overview.html phase-structure table lists Sprint 1; acceptance checkboxes flipped</span>
+      <code>grep "Sprint 1" Docs/epics/v0.0-baseline/epic-overview.html</code>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../index.html">v0.0-baseline</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 0</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 1: End-to-End Bridge</span>
+</nav>
+
+</article>
+
+</body>
+</html>

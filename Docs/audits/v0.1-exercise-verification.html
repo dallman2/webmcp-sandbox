@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audit: v0.1 Exercise Verification</title>
+<link rel="stylesheet" href="../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="audit" data-epic="v0.1-exercise-hardening">
+
+<header>
+  <h1>Audit: v0.1 Exercise Verification</h1>
+  <div class="meta">
+    <span>Epic: v0.1-exercise-hardening</span>
+    <span>Date: 2026-06-26</span>
+  </div>
+</header>
+
+<section id="summary">
+  <h2>Executive Summary</h2>
+  <p>This audit verifies the v0.1-exercise-hardening epic across three sprints: Sprint 1 (Truth Reconciliation &amp; Canonical Transport) replaced the hand-rolled SSE handler with <code>rmcp::StreamableHttpService</code>, fixed the polyfill execute_tool null bug, and added a 30s relay timeout. Sprint 2 (Container Correctness &amp; Host Reachability) fixed Docker runtime failures — fixture serving via tower-http ServeDir, <code>/sandbox-config</code> runtime config, URL/origin-filtered tab selection replacing naive <code>tabs[0]</code>, and cross-platform host reachability. Sprint 3 (Exercise Harness &amp; Single-Command Portability) delivers the smoke harness (<code>exercises/smoke.mjs</code> using <code>@modelcontextprotocol/sdk</code>), <code>Makefile</code> for single-command portability, <code>docker-compose.yml</code>, and the opt-in GHCR publish workflow.</p>
+  <p>The sandbox now successfully completes the full relay chain end-to-end: MCP client → Streamable HTTP :3000 → Rust server → WS :8765 → extension → <code>document.modelContext</code> → page tool → result back.</p>
+</section>
+
+<section id="architecture">
+  <h2>Architecture Diagram</h2>
+  <pre><code>AI Agent ──Streamable HTTP (:3000/mcp)──► Rust MCP Server ──WS (:8765)──► Browser Extension ──document.modelContext──► Web Page
+                                   │
+                              XVFB :99 virtual display
+                              VNC :5900 (human debugging)
+
+Exercise flow:
+  smoke.mjs (Node.js + @modelcontextprotocol/sdk)
+    → StreamableHTTPClientTransport → :3000/mcp
+    → tools/list → tools/call discover_tools → tools/call execute_tool
+    → assert each step → write transcript to output/<ts>.json</code></pre>
+</section>
+
+<section id="breakdown">
+  <h2>Component Breakdown</h2>
+
+  <table>
+    <thead>
+      <tr><th>Component</th><th>Responsibility</th><th>Technology</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>MCP transport</td>
+        <td>Streamable HTTP endpoint serving agent tool calls</td>
+        <td>rmcp::StreamableHttpService (1.8.0)</td>
+      </tr>
+      <tr>
+        <td>Tool definitions</td>
+        <td>discover_tools + execute_tool with schemars-derived schemas</td>
+        <td>#[rmcp::tool] macros in main.rs</td>
+      </tr>
+      <tr>
+        <td>WS relay</td>
+        <td>Forward tool calls to extension, correlate responses</td>
+        <td>axum ws + AppState relay_to_extension</td>
+      </tr>
+      <tr>
+        <td>Extension bridge</td>
+        <td>Background SW with config-driven tab targeting</td>
+        <td>WXT MV3 + @mcp-b/webmcp-polyfill</td>
+      </tr>
+      <tr>
+        <td>Runtime config</td>
+        <td>GET /sandbox-config for wsUrl/targetUrl/targetOrigin</td>
+        <td>axum route + env vars</td>
+      </tr>
+      <tr>
+        <td>Fixture serving</td>
+        <td>Serve fixtures/hello.html on :3000</td>
+        <td>tower-http::services::ServeDir</td>
+      </tr>
+      <tr>
+        <td>Exercise harness</td>
+        <td>Automated MCP client smoke tests with assertions</td>
+        <td>Node.js + @modelcontextprotocol/sdk</td>
+      </tr>
+      <tr>
+        <td>Build orchestration</td>
+        <td>Single-command portability: make run</td>
+        <td>GNU Make + Docker</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="strengths">
+  <h2>Strengths</h2>
+  <ul>
+    <li><strong>Canonical transport</strong>: rmcp::StreamableHttpService is the standard MCP transport — interoperable with MCP inspector and @modelcontextprotocol/sdk</li>
+    <li><strong>Polyfill null bug fixed</strong>: execute_tool now returns real results; fixture's execute() normalizes string args via JSON.parse</li>
+    <li><strong>Relay timeout</strong>: tokio::time::timeout(30s) prevents hanging MCP requests on extension disconnect</li>
+    <li><strong>Container serves fixtures natively</strong>: tower-http ServeDir eliminates the python3 http.server dependency</li>
+    <li><strong>Smart tab targeting</strong>: URL/origin-filtered tab selection with fallback chain replaces fragile tabs[0]</li>
+    <li><strong>Runtime configuration</strong>: /sandbox-config + SANDBOX_TARGET_URL env var make the sandbox configurable without code changes</li>
+    <li><strong>Dual-target exercise</strong>: smoke.mjs validates both the fixture (strict) and user's :8180 site (flexible)</li>
+    <li><strong>Single-command portability</strong>: make run works from any fresh clone</li>
+  </ul>
+</section>
+
+<section id="weaknesses">
+  <h2>Weaknesses (Critical Risks)</h2>
+
+  <table>
+    <thead>
+      <tr><th>Weakness</th><th>Risk Level</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Single-extension session</td>
+        <td>Medium</td>
+        <td>AppState supports only one extension WebSocket connection. Multi-agent scenarios require concurrent sessions — deferred to future epic (D0).</td>
+      </tr>
+      <tr>
+        <td>Tool-per-file refactor not done</td>
+        <td>Low</td>
+        <td>Both tools (discover_tools, execute_tool) live in main.rs. AGENTS.md mandates src/tools/ split once >3 tools — deferred as D4 since only 2 tools exist.</td>
+      </tr>
+      <tr>
+        <td>No CI beyond GHCR</td>
+        <td>Low</td>
+        <td>Verification is manual via make smoke-fixture and make smoke-host. GHCR workflow is workflow_dispatch opt-in only. Deferred CI pipeline (D3).</td>
+      </tr>
+      <tr>
+        <td>amd64 only</td>
+        <td>Low</td>
+        <td>No arm64/Apple Silicon native image. Docker Desktop emulation sufficient for v0.1. Deferred (D2).</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="recommendations">
+  <h2>Recommendations</h2>
+
+  <section>
+    <h3>Immediate (Low Effort)</h3>
+    <ul>
+      <li><strong>Validate on Linux host</strong>: the smoke-host path with --network=host should be verified on a real Linux machine</li>
+      <li><strong>Publish GHCR image</strong>: trigger the opt-in workflow_dispatch to publish webmcp-sandbox:latest to ghcr.io</li>
+      <li><strong>Add extension unit tests</strong>: Vitest suites covering background.ts tab selection and message routing (deferred since v0.0 Sprint 1)</li>
+    </ul>
+  </section>
+
+  <section>
+    <h3>Strategic (High Performance)</h3>
+    <ul>
+      <li><strong>Multi-agent support</strong>: refactor AppState to manage multiple extension connections with session-scoped pending maps</li>
+      <li><strong>Tool-per-file refactor</strong>: once tool catalog grows >3, split into src/tools/ per AGENTS.md conventions</li>
+      <li><strong>Automated CI</strong>: add push-triggered CI that runs cargo fmt/clippy/build + extension build + docker build + smoke-fixture</li>
+      <li><strong>arm64 image</strong>: add linux/arm64 platform to Docker build and GHCR workflow</li>
+    </ul>
+  </section>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../index.html">Docs Home</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">v0.1 Exercise Verification</span>
+</nav>
+
+</article>
+
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System Overview Architecture — WebMCP Sandbox</title>
+<link rel="stylesheet" href="../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="reference" data-epic="v0.0-baseline">
+
+<header>
+  <h1>System Overview Architecture</h1>
+  <div class="meta">
+    <span>Date: 2026-06-26</span>
+    <span>Sprint 0 baseline</span>
+  </div>
+</header>
+
+<section id="overview">
+  <h2>Project Purpose</h2>
+  <p>WebMCP Sandbox is a containerized, ephemeral browser sandbox for AI agents using the Web Model Context Protocol (WebMCP). The agent discovers and calls web-page tools through strictly typed JSON payloads — never raw <code>page.evaluate</code> JavaScript. A Rust MCP server translates between the AI agent (connecting via SSE on <code>:3000</code>) and a headless Chromium browser (communicating through an MV3 Chrome extension relayed over WebSocket on <code>:8765</code>). The target web page exposes tools through <code>document.modelContext</code>, injected by the extension's polyfill.</p>
+</section>
+
+<section id="component-topology">
+  <h2>Component Topology</h2>
+  <pre><code>AI Agent ──SSE (:3000)──► Rust MCP Server ──WS (:8765)──► Browser Extension ──document.modelContext──► Web Page
+                               │
+                           XVFB :99 virtual display
+                           VNC :5900 (human debugging)
+                           CDP :9222 (DevTools, internal)</code></pre>
+
+  <table>
+    <thead><tr><th>Component</th><th>Directory</th><th>Role</th><th>Status (Sprint 0)</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>mcp-server</code></td>
+        <td><code>mcp-server/</code></td>
+        <td>Rust binary: SSE MCP server facing agent, WebSocket relay to browser extension</td>
+        <td>Stub — compiles, serves one-shot SSE event, no <code>rmcp</code>, no <code>:8765</code> WS listener</td>
+      </tr>
+      <tr>
+        <td><code>webmcp-extension</code></td>
+        <td><code>webmcp-extension/</code></td>
+        <td>MV3 Chrome extension (WXT + <code>@mcp-b/*</code>): injects <code>document.modelContext</code> polyfill, relays WS tool calls to/from the page</td>
+        <td>Most complete — <code>background.ts</code> WS relay and <code>content.ts</code> polyfill injection built and correct</td>
+      </tr>
+      <tr>
+        <td>Infrastructure</td>
+        <td><code>docker/</code></td>
+        <td>3-stage Dockerfile (rust-build → ext-build → ubuntu+Chrome runtime) + <code>start.sh</code></td>
+        <td>Build passes all stages; runtime image boots but Chromium crashes (snap wrapper issue)</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="data-flow">
+  <h2>Data Flow (discover → call → respond)</h2>
+  <ol>
+    <li><strong>Agent connects</strong> via SSE to <code>http://localhost:3000/sse</code> — the rmcp SSE transport (stubbed today, real in Sprint 1).</li>
+    <li><strong>Agent discovers tools</strong>: the server forwards a <code>{type:"discover_tools", id}</code> JSON envelope over the <code>:8765</code> WebSocket to the browser extension's background service worker.</li>
+    <li><strong>Extension relays to page</strong>: <code>background.ts</code> uses <code>chrome.scripting.executeScript</code> to call <code>document.modelContext.getTools()</code> on the target tab. The polyfill (<code>@mcp-b/webmcp-polyfill</code>, injected by <code>content.ts</code>) provides the implementation if the page doesn't natively expose <code>document.modelContext</code>.</li>
+    <li><strong>Tools returned</strong>: the extension sends <code>{type:"discover_result", tools:[...], id}</code> back over WS; the server republishes to the SSE client.</li>
+    <li><strong>Agent calls a tool</strong>: <code>{type:"call_tool", id, toolName, args}</code> over WS → <code>background.ts</code> calls <code>document.modelContext.executeTool(toolName, JSON.stringify(args))</code> on the page.</li>
+    <li><strong>Native response</strong>: <code>{type:"tool_result", id, result}</code> (or <code>tool_error</code>) flows back over WS; server republishes to SSE.</li>
+  </ol>
+
+  <p><strong>Wire protocol</strong> (server ↔ extension, defined by <code>background.ts:16–70</code>): JSON messages with <code>{type, id, ...}</code> — types are <code>call_tool</code>, <code>discover_tools</code>, <code>tool_result</code>, <code>tool_error</code>, <code>discover_result</code>. The <code>id</code> field correlates request-response pairs across the relay.</p>
+</section>
+
+<section id="ports">
+  <h2>Ports</h2>
+  <table>
+    <thead><tr><th>Port</th><th>Service</th><th>Bound (Sprint 0)</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><strong>3000</strong></td><td>MCP SSE endpoint</td><td>Yes</td><td>Serves one-shot stub event; real rmcp wiring pending Sprint 1</td></tr>
+      <tr><td><strong>8765</strong></td><td>Internal WebSocket (server ↔ extension)</td><td><strong>No</strong></td><td>Extension connects here — server does not listen. This is the primary Sprint 1 gap.</td></tr>
+      <tr><td><strong>5900</strong></td><td>VNC (human debugging)</td><td>Yes</td><td>Reachable; x11vnc on Xvfb <code>:99</code></td></tr>
+      <tr><td><strong>9222</strong></td><td>Chrome DevTools Protocol</td><td><strong>No</strong></td><td>Chromium crashed (snap wrapper); CDP port never opened</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="golden-rule">
+  <h2>The Golden Rule &amp; Mandate Compliance (Sprint 0 baseline)</h2>
+  <p>The agentic harness must never send JavaScript to the browser. It must only send strictly typed JSON payloads through the MCP server. All interactions with the page go through <code>document.modelContext.executeTool()</code> and <code>document.modelContext.getTools()</code> — never <code>eval()</code> or manual DOM traversal.</p>
+
+  <table>
+    <thead><tr><th>Mandate</th><th>Source</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>No raw JS / eval in extension relay</td><td>AGENTS.md:69</td><td>✅ Pass — <code>background.ts</code> only calls <code>document.modelContext</code> APIs</td></tr>
+      <tr><td>tracing → stderr only, no println!</td><td>AGENTS.md:58</td><td>✅ Pass — <code>main.rs</code> configured with <code>.with_writer(std::io::stderr)</code>; zero <code>println!</code> calls in source</td></tr>
+      <tr><td>Structured logging fields (correlation_id, tool_name, ws_session_id)</td><td>AGENTS.md:59</td><td>❌ Not implemented — flat <code>info!</code> calls only</td></tr>
+      <tr><td>rmcp with features server/transport-io/transport-sse-server</td><td>AGENTS.md:92</td><td>❌ Not in Cargo.toml</td></tr>
+      <tr><td>schemars for JSON schema derivation</td><td>AGENTS.md:64</td><td>❌ Not in Cargo.toml</td></tr>
+      <tr><td>#[rmcp::tool] macros for all tool definitions</td><td>AGENTS.md:91</td><td>❌ No tools defined; <code>src/tools.rs</code> doesn't exist</td></tr>
+      <tr><td>Zod validation for extension-side tool arguments</td><td>AGENTS.md:65</td><td>❌ Not present in extension source</td></tr>
+      <tr><td>DESIGN.md exists</td><td>AGENTS.md:160</td><td>❌ Not created</td></tr>
+      <tr><td>Unit tests via Vitest (extension)</td><td>AGENTS.md:101</td><td>❌ Deferred to Sprint 1; no vitest dep or test script</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="known-gaps">
+  <h2>Known Gaps (Sprint 0 → Sprint 1)</h2>
+  <ol>
+    <li><strong>rmcp dependency absent</strong> — server is a raw axum stub. <code>Sprint 1 task 1.1</code></li>
+    <li><strong>:8765 WebSocket listener not implemented</strong> — extension cannot connect. <code>Sprint 1 task 2.1</code></li>
+    <li><strong>Chromium crashes on boot</strong> — Ubuntu 22.04 <code>chromium-browser</code> package is a snap wrapper; snap not available in container. <code>Dockerfile runtime stage fix needed</code></li>
+    <li><strong>No tool definitions</strong> — <code>src/tools.rs</code> doesn't exist despite README claim. <code>Sprint 1 task 1.2</code></li>
+    <li><strong>No structured logging fields</strong> — <code>Sprint 1 task 3.1</code></li>
+    <li><strong>No test coverage</strong> — 0 tests across Rust and extension. <code>Future sprint</code></li>
+  </ol>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../index.html">Docs Home</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">System Overview Architecture</span>
+</nav>
+
+</article>
+
+</body>
+</html>

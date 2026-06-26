@@ -1,61 +1,101 @@
 # WebMCP Sandbox
 
 Containerized, ephemeral browser sandbox for AI agents using the **Web Model Context Protocol**.
+The agent discovers and calls web-page tools through strictly typed JSON payloads — never raw `page.evaluate` JavaScript.
 
-The agent interacts with websites strictly through typed JSON tool calls — never
-raw `page.evaluate` JavaScript. A Rust MCP translation server bridges the agent
-(SSE) to a headless Chrome instance (via a thin MV3 browser extension).
-
-## Architecture
-
-```
-AI Agent ──SSE (:3000/sse)──► Rust MCP Server ──WS (:8765)──► Browser Extension ──document.modelContext──► Web Page
-                                         │
-                                    XVFB :99 headless display
-                                    VNC :5900 (human debugging)
+```bash
+git clone <repo-url> && cd webmcp-sandbox && make run
 ```
 
 ## Quick Start
 
-### Build & Run (Docker)
+### Build & Run
 
 ```bash
-docker build -f docker/Dockerfile -t webmcp-sandbox .
-docker run -p 3000:3000 -p 5900:5900 webmcp-sandbox
+make run          # build + run with fixture self-test page
+make run-host     # build + run targeting your localhost:8180 WebMCP site
+```
+
+### Exercise (Smoke Test)
+
+```bash
+make smoke-fixture   # full E2E: boot container, run MCP client assertions against fixture
+make smoke-host      # full E2E: run assertions against your localhost:8180 site
 ```
 
 ### Connect Your Agent
 
-Point your agentic harness at:
+Point your MCP client at:
 
-- **SSE endpoint**: `http://localhost:3000/sse`
-- **VNC debugging**: `localhost:5900` (macOS Screen Sharing, or any VNC client)
+| Endpoint | URL |
+|----------|-----|
+| Streamable HTTP | `http://localhost:3000/mcp` |
+| Sandbox config | `http://localhost:3000/sandbox-config` |
+| VNC (debugging) | `localhost:5900` |
+| Chrome DevTools | `localhost:9222` |
 
-### Agent System Prompt Constraints
-
-Inject these into your agent's system prompt to prevent script-kiddie behavior:
-
-```
-[CRITICAL PROTOCOL]
-1. You are interacting with a remote state machine via the Model Context Protocol (MCP).
-2. You are FORBIDDEN from using Playwright, Puppeteer, Selenium, or injecting raw JavaScript.
-3. You must advance the playbook sequentially.
-4. WORKFLOW LOOP:
-   - Step 1: Call the tool discovery endpoint to assess available actions on the current state.
-   - Step 2: Execute a SINGLE tool using a strictly typed JSON payload.
-   - Step 3: Wait for the native system response before proceeding to the next playbook intent.
-```
-
-## Repository Structure
+## Architecture
 
 ```
-├── mcp-server/          Rust MCP translation server (rmcp + tokio + tracing)
-├── webmcp-extension/    Thin MV3 Chrome extension (@mcp-b/* MIT packages)
-├── docker/              Dockerfile (3-stage) + start.sh
-├── Docs/                Spiderweb documentation tree
-├── .opencode/           OpenCode agent configurations
-└── .env.example         Environment template
+AI Agent ──Streamable HTTP (:3000/mcp)──► Rust MCP Server ──WS (:8765)──► Browser Extension ──document.modelContext──► Web Page
+                                   │
+                              XVFB :99 headless display
+                              VNC :5900 (human debugging)
 ```
+
+## Target Your Site
+
+Point Chromium at any WebMCP-enabled page via env vars:
+
+```bash
+# macOS (container → host networking)
+docker run -p 3000:3000 -p 5900:5900 \
+  --add-host=host.docker.internal:host-gateway \
+  -e SANDBOX_TARGET_HOST=host.docker.internal \
+  -e SANDBOX_TARGET_URL=http://localhost:8180/ \
+  webmcp-sandbox
+
+# Linux (host networking)
+docker run --network=host \
+  -e SANDBOX_TARGET_URL=http://localhost:8180/ \
+  webmcp-sandbox
+```
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `SANDBOX_TARGET_URL` | `http://localhost:3000/fixtures/hello.html` | URL Chromium opens on boot |
+| `SANDBOX_TARGET_HOST` | (none) | Rewrites `localhost`/`127.0.0.1` in `SANDBOX_TARGET_URL` to this host |
+
+## Exercise
+
+The `exercises/` harness validates the full WebMCP relay chain using a real MCP client (`@modelcontextprotocol/sdk`):
+
+1. `tools/list` — verify server exposes `discover_tools` + `execute_tool`
+2. `tools/call discover_tools` — verify page tools are registered
+3. `tools/call execute_tool` — execute a tool and verify the result
+
+Results are written to `exercises/output/<timestamp>.json`.
+
+See `exercises/playbook.md` for the full exercise flow and the [AGENTS.md](AGENTS.md) `[CRITICAL PROTOCOL]` for agent constraints.
+
+## Pull & Run (GHCR)
+
+A pre-built image is published to GitHub Container Registry via opt-in workflow dispatch:
+
+```bash
+docker pull ghcr.io/<owner>/webmcp-sandbox:latest
+docker run -p 3000:3000 -p 5900:5900 ghcr.io/<owner>/webmcp-sandbox:latest
+```
+
+Trigger the publish workflow: `gh workflow run docker-publish.yml`
+
+## docker-compose
+
+```bash
+docker compose up   # equivalent to make run with fixture default
+```
+
+Edit `docker-compose.yml` to uncomment `extra_hosts` (macOS) or `network_mode` (Linux) for host networking.
 
 ## Development
 
@@ -68,29 +108,36 @@ Inject these into your agent's system prompt to prevent script-kiddie behavior:
 
 ```bash
 # Rust server
-cd mcp-server && cargo run -- --transport sse --port 3000
+cd mcp-server && cargo run
 
 # Extension (requires Chrome)
 cd webmcp-extension && npm install && npm run dev
 
-# Docs
+# Docs browser
 node Docs/scripts/serve.mjs
+```
+
+## Repository Structure
+
+```
+├── mcp-server/          Rust MCP translation server (rmcp + tokio + tracing)
+├── webmcp-extension/    Thin MV3 Chrome extension (@mcp-b/* MIT packages)
+├── exercises/           MCP client smoke harness (@modelcontextprotocol/sdk)
+├── docker/              Dockerfile (3-stage) + start.sh
+├── Docs/                Spiderweb documentation tree
+├── Makefile             Single-command portability
+├── docker-compose.yml   Compose orchestration (optional)
+└── .opencode/           OpenCode agent configurations
 ```
 
 ## Ports
 
 | Port | Service |
 |------|---------|
-| 3000 | MCP SSE endpoint (agent connection) |
+| 3000 | MCP Streamable HTTP endpoint (`/mcp`, `/sandbox-config`, `/fixtures/*`) |
+| 8765 | Internal WebSocket (Rust server ↔ browser extension) |
 | 5900 | VNC (human debugging) |
 | 9222 | Chrome DevTools Protocol |
-| 8765 | Internal WS (server ↔ extension) |
-
-## Why This Architecture
-
-1. **Safety** — agent isolated in a Linux container, no access to host cookies or filesystem.
-2. **Auditability** — every action is a typed JSON tool call, not an opaque blob of DOM traversal.
-3. **Resilience** — agent discovers tools dynamically from the page via `document.modelContext`; adapts to UI changes automatically.
 
 ## License
 

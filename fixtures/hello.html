@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>WebMCP Sandbox Fixture</title>
+</head>
+<body>
+<h1>WebMCP Sandbox Test Page</h1>
+<p id="status">Registering tool...</p>
+
+<script>
+(function() {
+  var mc = navigator.modelContext || document.modelContext;
+  if (!mc) {
+    document.getElementById("status").textContent = "ERROR: modelContext not available";
+    return;
+  }
+  mc.registerTool({
+    name: "hello",
+    description: "Returns a greeting. A simple test tool for the WebMCP sandbox.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Name to greet" }
+      }
+    },
+    execute: function(args) {
+      if (typeof args === "string") {
+        try { args = JSON.parse(args); } catch(e) { args = {}; }
+      }
+      if (!args || typeof args !== "object") args = {};
+      var name = args.name || "world";
+      return { greeting: "Hello, " + name + "! from WebMCP sandbox" };
+    }
+  });
+  document.getElementById("status").textContent = 'Connected. Tool "hello" registered.';
+})();
+</script>
+</body>
+</html>

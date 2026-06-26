@@ -11,9 +11,8 @@ AI Agent ──SSE (:3000/sse)──► Rust MCP Server ──WS (:8765)──�
 
 ## Crate Layout
 
-- `src/main.rs` — entrypoint: parse args, init tracing to stderr, boot SSE
-- `src/tools.rs` — `#[rmcp::tool]` stubs (discover, get_page_state, relay)
-  fleshed out in Sprint 1 with real WebSocket-to-extension bridge
+- `src/main.rs` — entrypoint: parse args, init tracing to stderr with structured fields (`correlation_id`, `tool_name`, `ws_session_id`), boot SSE server on `:3000` and WebSocket relay on `:8765`. Contains `discover_tools` and `execute_tool` relay implementations that bridge agent tool calls to the browser extension via WS.
+- `Cargo.toml` — dependencies include `rmcp` (server, transport-io, server-side-http), `schemars` for JSON schema derivation from tool input structs, `axum` (json, ws) for SSE + WebSocket, and `tracing`/`tracing-subscriber` for structured stderr logging.
 
 ## Prerequisites
 

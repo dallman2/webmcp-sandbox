@@ -15,3 +15,5 @@ docker-compose.override.yml
 
 # Spiderweb Docs (scripts have their own node_modules)
 Docs/scripts/node_modules/
+webmcp-extension/.wxt/
+exercises/output/
