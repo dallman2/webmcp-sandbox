@@ -19,8 +19,25 @@ XVFB_PID=$!
 export DISPLAY=:99
 
 echo "[sandbox] booting VNC (port 5900)..."
-x11vnc -display :99 -forever -nopw -bg -rfbport 5900 2>/dev/null &
+x11vnc -display :99 -forever -nopw -rfbport 5900 2>/dev/null &
 VNC_PID=$!
+
+echo "[sandbox] waiting for VNC readiness..."
+for i in $(seq 1 50); do
+    if kill -0 $VNC_PID 2>/dev/null && (echo >/dev/tcp/127.0.0.1/5900) 2>/dev/null; then
+        echo "[sandbox] VNC ready on :5900"
+        break
+    fi
+    if ! kill -0 $VNC_PID 2>/dev/null; then
+        echo "[sandbox] ERROR: x11vnc exited unexpectedly" >&2
+        exit 1
+    fi
+    if [ "$i" -eq 50 ]; then
+        echo "[sandbox] ERROR: VNC failed to start within 10s" >&2
+        exit 1
+    fi
+    sleep 0.2
+done
 
 echo "[sandbox] starting MCP translation server (Streamable HTTP :3000, WS :8765)..."
 /app/server &
