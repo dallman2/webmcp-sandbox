@@ -31,7 +31,7 @@ Point your MCP client at:
 |----------|-----|
 | Streamable HTTP | `http://localhost:3000/mcp` |
 | Sandbox config | `http://localhost:3000/sandbox-config` |
-| VNC (debugging) | `localhost:5900` |
+| VNC (debugging) | `localhost:5901` |
 | Chrome DevTools | `localhost:9222` |
 
 ## Architecture
@@ -49,7 +49,7 @@ Point Chromium at any WebMCP-enabled page via env vars:
 
 ```bash
 # macOS (container → host networking)
-docker run -p 3000:3000 -p 5900:5900 \
+docker run -p 3000:3000 -p 5901:5900 \
   --add-host=host.docker.internal:host-gateway \
   -e SANDBOX_TARGET_HOST=host.docker.internal \
   -e SANDBOX_TARGET_URL=http://localhost:8180/ \
@@ -84,7 +84,7 @@ A pre-built image is published to GitHub Container Registry via opt-in workflow 
 
 ```bash
 docker pull ghcr.io/<owner>/webmcp-sandbox:latest
-docker run -p 3000:3000 -p 5900:5900 ghcr.io/<owner>/webmcp-sandbox:latest
+docker run -p 3000:3000 -p 5901:5900 ghcr.io/<owner>/webmcp-sandbox:latest
 ```
 
 Trigger the publish workflow: `gh workflow run docker-publish.yml`
@@ -136,7 +136,7 @@ node Docs/scripts/serve.mjs
 |------|---------|
 | 3000 | MCP Streamable HTTP endpoint (`/mcp`, `/sandbox-config`, `/fixtures/*`) |
 | 8765 | Internal WebSocket (Rust server ↔ browser extension) |
-| 5900 | VNC (human debugging) |
+| 5901 | VNC (human debugging, container :5900) |
 | 9222 | Chrome DevTools Protocol |
 
 ## License

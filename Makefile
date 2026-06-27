@@ -2,7 +2,7 @@ IMAGE := webmcp-sandbox
 CONTAINER := webmcp-sandbox
 DOCKERFILE := docker/Dockerfile
 MCP_PORT := 3000
-VNC_PORT := 5900
+VNC_PORT := 5901
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
@@ -23,7 +23,7 @@ build:
 run: build
 	docker rm -f $(CONTAINER) 2>/dev/null || true
 	docker run -d --name $(CONTAINER) \
-		-p $(MCP_PORT):$(MCP_PORT) -p $(VNC_PORT):$(VNC_PORT) \
+		-p $(MCP_PORT):$(MCP_PORT) -p $(VNC_PORT):5900 \
 		-e SANDBOX_TARGET_URL=http://localhost:3000/fixtures/hello.html \
 		$(IMAGE)
 	@echo "[make] container running on :$(MCP_PORT) (VNC :$(VNC_PORT))"
@@ -31,7 +31,7 @@ run: build
 run-fixture: build
 	docker rm -f $(CONTAINER) 2>/dev/null || true
 	docker run -d --name $(CONTAINER) \
-		-p $(MCP_PORT):$(MCP_PORT) -p $(VNC_PORT):$(VNC_PORT) \
+		-p $(MCP_PORT):$(MCP_PORT) -p $(VNC_PORT):5900 \
 		-e SANDBOX_TARGET_URL=http://localhost:3000/fixtures/hello.html \
 		$(IMAGE)
 	@echo "[make] fixture container running"
