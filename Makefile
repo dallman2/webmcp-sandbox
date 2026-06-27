@@ -15,7 +15,7 @@ else
   HOST_PORT_MAP :=
 endif
 
-.PHONY: build run run-fixture run-smoke run-host smoke smoke-fixture smoke-host publish clean
+.PHONY: build run run-fixture run-smoke run-host smoke smoke-fixture smoke-host publish clean validate
 
 build:
 	docker build -f $(DOCKERFILE) -t $(IMAGE) .
@@ -94,3 +94,6 @@ publish:
 
 clean:
 	docker rm -f $(CONTAINER) 2>/dev/null || true
+
+validate:
+	bash scripts/validate-fresh-pull.sh
