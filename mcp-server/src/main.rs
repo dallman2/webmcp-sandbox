@@ -118,6 +118,12 @@ pub struct ExecuteToolInput {
     pub args: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct NavigatePageInput {
+    #[schemars(description = "The full URL to navigate the browser to")]
+    pub url: String,
+}
+
 #[rmcp::tool_router(server_handler)]
 impl McpHandler {
     #[rmcp::tool(
@@ -155,6 +161,29 @@ impl McpHandler {
         match self
             .state
             .relay_to_extension("call_tool", Some(extra), "execute_tool")
+            .await
+        {
+            Ok(result) => {
+                let text = serde_json::to_string_pretty(&result).unwrap_or_default();
+                Ok(model::CallToolResult::success(vec![model::Content::text(
+                    text,
+                )]))
+            }
+            Err(e) => Ok(model::CallToolResult::error(vec![model::Content::text(e)])),
+        }
+    }
+
+    #[rmcp::tool(
+        description = "Navigate the browser to a new URL. Use for full page navigation (e.g., going to the login page or a different section of the app)."
+    )]
+    async fn navigate_page(
+        &self,
+        input: Parameters<NavigatePageInput>,
+    ) -> Result<model::CallToolResult, rmcp::ErrorData> {
+        let extra = serde_json::json!({ "url": input.0.url });
+        match self
+            .state
+            .relay_to_extension("navigate", Some(extra), "navigate_page")
             .await
         {
             Ok(result) => {

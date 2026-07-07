@@ -90,6 +90,22 @@ export default defineBackground(() => {
         }
       }
 
+      if (msg.type === "navigate") {
+        try {
+          const tab = await findTargetTab();
+          if (!tab?.id) {
+            ws?.send(JSON.stringify({ type: "navigate_error", id: msg.id, error: `no tab matching ${targetOrigin}` }));
+            return;
+          }
+          await chrome.tabs.update(tab.id, { url: msg.url });
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          ws?.send(JSON.stringify({ type: "navigate_result", id: msg.id, url: msg.url }));
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          ws?.send(JSON.stringify({ type: "navigate_error", id: msg.id, error: message }));
+        }
+      }
+
       if (msg.type === "discover_tools") {
         try {
           const tab = await findTargetTab();
