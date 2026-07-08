@@ -49,7 +49,7 @@ echo "[fleet] image: $IMAGE"
 UNAME_S=$(uname -s)
 EXTRA_ARGS=""
 if [ "$UNAME_S" = "Darwin" ]; then
-  EXTRA_ARGS="--add-host=host.docker.internal:host-gateway"
+  EXTRA_ARGS="--add-host=host.docker.internal:host-gateway --add-host=admin.capx.local:host-gateway"
 fi
 
 for i in $(seq 0 $((COUNT - 1))); do
