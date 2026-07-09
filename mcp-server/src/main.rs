@@ -195,6 +195,25 @@ impl McpHandler {
             Err(e) => Ok(model::CallToolResult::error(vec![model::Content::text(e)])),
         }
     }
+
+    #[rmcp::tool(
+        description = "Capture the current page's URL and document.body innerText through the browser extension. Used as a failure artifact when tool discovery returns zero tools, to diagnose silent page crashes without a manual CDP read into the container."
+    )]
+    async fn capture_page(&self) -> Result<model::CallToolResult, rmcp::ErrorData> {
+        match self
+            .state
+            .relay_to_extension("capture_page", None, "capture_page")
+            .await
+        {
+            Ok(result) => {
+                let text = serde_json::to_string_pretty(&result).unwrap_or_default();
+                Ok(model::CallToolResult::success(vec![model::Content::text(
+                    text,
+                )]))
+            }
+            Err(e) => Ok(model::CallToolResult::error(vec![model::Content::text(e)])),
+        }
+    }
 }
 
 async fn extension_ws_task(ws: WebSocket, state: Arc<AppState>) {

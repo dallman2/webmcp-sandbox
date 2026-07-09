@@ -128,6 +128,48 @@ export default defineBackground(() => {
           );
         }
       }
+
+      if (msg.type === "capture_page") {
+        try {
+          const tab = await findTargetTab();
+          if (!tab?.id) {
+            ws?.send(JSON.stringify({ type: "capture_error", id: msg.id, error: `no tab matching ${targetOrigin}` }));
+            return;
+          }
+          const result = await chrome.scripting.executeScript({
+            target: { tabId: tab.id! },
+            world: "MAIN",
+            func: capturePageBody,
+          });
+          const captured = (result[0]?.result ?? { url: "", bodyText: "" }) as {
+            url: string;
+            bodyText: string;
+          };
+          ws?.send(
+            JSON.stringify({
+              type: "capture_result",
+              id: msg.id,
+              url: captured.url,
+              bodyText: captured.bodyText,
+            }),
+          );
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          ws?.send(
+            JSON.stringify({ type: "capture_error", id: msg.id, error: message }),
+          );
+        }
+      }
+    };
+  }
+
+  // Runs in the page's MAIN world. Returns the current URL + document.body
+  // innerText so the sandbox proxy can attach a failure artifact when tool
+  // discovery finds zero tools (silent crash diagnosis).
+  function capturePageBody(): { url: string; bodyText: string } {
+    return {
+      url: typeof location !== "undefined" ? location.href : "",
+      bodyText: (document && document.body && document.body.innerText) || "",
     };
   }
 
